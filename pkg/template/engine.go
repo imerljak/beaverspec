@@ -1,0 +1,78 @@
+package template
+
+import (
+	"bytes"
+	"fmt"
+	"text/template"
+)
+
+// Engine handles template loading and rendering
+type Engine interface {
+	// Load templates from a directory or embed
+	Load(templateDir string) error
+
+	// Render a template with data
+	Render(templateName string, data interface{}) (string, error)
+
+	// Register a custom helper function
+	RegisterFunction(name string, fn interface{}) error
+
+	// Check if a template exists
+	HasTemplate(name string) bool
+}
+
+// GoTemplateEngine implements Engine using Go's text/template
+type GoTemplateEngine struct {
+	templates *template.Template
+	funcMap   template.FuncMap
+}
+
+// NewGoTemplateEngine creates a new template engine
+func NewGoTemplateEngine() *GoTemplateEngine {
+	return &GoTemplateEngine{
+		funcMap: DefaultHelpers(), // Load default helper functions
+	}
+}
+
+// RegisterFunction registers a custom template function
+func (e *GoTemplateEngine) RegisterFunction(name string, fn interface{}) error {
+	if _, ok := e.funcMap[name]; !ok {
+		e.funcMap[name] = fn
+		return nil
+	}
+	return fmt.Errorf("function '%s' already exists", name)
+}
+
+// Load loads templates from a directory
+func (e *GoTemplateEngine) Load(templateDir string) error {
+	templates, err := template.New("root").Funcs(e.funcMap).ParseGlob(templateDir + "/*.tmpl")
+	if err != nil {
+		return fmt.Errorf("failed to parse templates from %s: %w", templateDir, err)
+	}
+	e.templates = templates
+	return nil
+}
+
+// Render executes a template with the given data
+func (e *GoTemplateEngine) Render(templateName string, data interface{}) (string, error) {
+	t := e.templates.Lookup(templateName)
+	if t == nil {
+		return "", fmt.Errorf("no template found with name '%s'", templateName)
+	}
+
+	var buff bytes.Buffer
+	if err := t.Execute(&buff, data); err != nil {
+		return "", fmt.Errorf("failed to execute template '%s': %w", templateName, err)
+	}
+
+	return buff.String(), nil
+}
+
+// HasTemplate checks if a template exists
+func (e *GoTemplateEngine) HasTemplate(name string) bool {
+	if e.templates == nil {
+		return false
+	}
+
+	return e.templates.Lookup(name) != nil
+}

@@ -1,0 +1,60 @@
+#version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  enable:
+    # Essential
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - typecheck
+    - unused
+
+    # Additional
+    - gofmt
+    - goimports
+    - misspell
+    - revive
+    - unconvert
+    - unparam
+    - gocritic
+    
+  disable:
+    # Disable noisy linters
+    - lll
+    - funlen
+
+linters-settings:
+  errcheck:
+    check-type-assertions: false
+    check-blank: false
+
+  govet:
+    enable-all: true
+
+  goimports:
+    local-prefixes: github.com/imerljak/openapi-gen
+
+  revive:
+    rules:
+      - name: exported
+        disabled: false
+      - name: package-comments
+        disabled: false
+
+issues:
+  max-same-issues: 0
+
+  exclude-dirs:
+    - vendor
+
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - errcheck
+        - unparam
