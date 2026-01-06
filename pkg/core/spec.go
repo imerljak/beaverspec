@@ -118,6 +118,8 @@ type Property struct {
 	MinItems  *int
 	MaxItems  *int
 
+	Enum []interface{} // Enum values if this is an enum
+
 	// For arrays
 	Items *Property
 

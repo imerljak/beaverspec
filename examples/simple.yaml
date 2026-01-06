@@ -1,0 +1,29 @@
+openapi: 3.0.0
+info:
+  title: Simple API
+  version: 1.0.0
+  description: Test spec without time.Time
+
+components:
+  schemas:
+    Product:
+      type: object
+      description: A simple product
+      required:
+        - name
+        - price
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Product ID
+        name:
+          type: string
+          description: Product name
+        price:
+          type: number
+          format: float
+          description: Product price
+        inStock:
+          type: boolean
+          description: Whether in stock

@@ -1,0 +1,35 @@
+openapi: 3.0.0
+info:
+  title: Enum Test API
+  version: 1.0.0
+  description: Test spec with enum values
+
+components:
+  schemas:
+    Order:
+      type: object
+      description: An order in the system
+      required:
+        - id
+        - status
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Order ID
+        status:
+          type: string
+          description: Order status
+          enum:
+            - pending
+            - processing
+            - shipped
+            - delivered
+            - cancelled
+        priority:
+          type: string
+          description: Order priority
+          enum:
+            - low
+            - medium
+            - high

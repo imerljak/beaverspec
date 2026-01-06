@@ -17,7 +17,7 @@ func TestCapitalize(t *testing.T) {
 		{Input: "A", Expectation: "A"},
 	}
 
-	exec(t, tests, NamedFn{Name: "capitalize", Fn: capitalize})
+	exec(t, tests, NamedFn{Name: "capitalize", Fn: Capitalize})
 }
 
 func TestToCamelCase(t *testing.T) {
@@ -35,7 +35,7 @@ func TestToCamelCase(t *testing.T) {
 		{Input: "get_user_by_id", Expectation: "getUserById"},
 	}
 
-	exec(t, tests, NamedFn{Name: "toCamelCase", Fn: toCamelCase})
+	exec(t, tests, NamedFn{Name: "toCamelCase", Fn: ToCamelCase})
 }
 
 func TestToPascalCase(t *testing.T) {
@@ -50,7 +50,7 @@ func TestToPascalCase(t *testing.T) {
 		{Input: "user-name-test", Expectation: "UserNameTest"},
 	}
 
-	exec(t, tests, NamedFn{Name: "toPascalCase", Fn: toPascalCase})
+	exec(t, tests, NamedFn{Name: "toPascalCase", Fn: ToPascalCase})
 }
 
 func TestToSnakeCase(t *testing.T) {
@@ -63,7 +63,7 @@ func TestToSnakeCase(t *testing.T) {
 		{Input: "getUserByID", Expectation: "get_user_by_i_d"},
 	}
 
-	exec(t, rules, NamedFn{Name: "toSnakeCase", Fn: toSnakeCase})
+	exec(t, rules, NamedFn{Name: "toSnakeCase", Fn: ToSnakeCase})
 }
 
 func TestToKebabCase(t *testing.T) {
@@ -74,7 +74,7 @@ func TestToKebabCase(t *testing.T) {
 		{Input: "user_name", Expectation: "user-name"},
 	}
 
-	exec(t, rules, NamedFn{Name: "toKebabCase", Fn: toKebabCase})
+	exec(t, rules, NamedFn{Name: "toKebabCase", Fn: ToKebabCase})
 }
 
 type Fn func(string) string

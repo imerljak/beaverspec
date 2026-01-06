@@ -130,6 +130,7 @@ func (n *Normalizer) extractProperties(props openapi3.Schemas, required []string
 			Description: prop.Description,
 			Required:    isRequired,
 			Nullable:    prop.Nullable,
+			Enum:        prop.Enum,
 			Items: &core.Property{
 				Type: itemsType,
 			},
