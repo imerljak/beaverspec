@@ -2,6 +2,7 @@ package parser
 
 import (
 	"sort"
+	"strings"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/imerljak/openapi-gen/pkg/core"
@@ -123,6 +124,12 @@ func (n *Normalizer) extractProperties(props openapi3.Schemas, required []string
 			}
 		}
 
+		var refType string
+		if propRef.Ref != "" {
+			i := strings.LastIndex(propRef.Ref, "/")
+			refType = propRef.Ref[i+1:]
+		}
+
 		property := core.Property{
 			Name:        name,
 			Type:        propType,
@@ -134,6 +141,7 @@ func (n *Normalizer) extractProperties(props openapi3.Schemas, required []string
 			Items: &core.Property{
 				Type: itemsType,
 			},
+			RefType: refType,
 		}
 
 		// Handle nested objects

@@ -186,6 +186,14 @@ func (g *Generator) convertProperties(props []core.Property, modelName string) [
 // mapType converts OpenAPI types to Golang types.
 func (g *Generator) mapType(prop core.Property, modelName string) string {
 
+	if prop.RefType != "" {
+		if !prop.Required {
+			return "*" + prop.RefType
+		}
+
+		return prop.RefType
+	}
+
 	// Handle enum types
 	if len(prop.Enum) > 0 {
 		enumTypeName := modelName + template.Capitalize(prop.Name)

@@ -125,6 +125,8 @@ type Property struct {
 
 	// For objects
 	Properties []Property
+
+	RefType string // Referenced type name (for $ref or nested objects)
 }
 
 type Discriminator struct {
