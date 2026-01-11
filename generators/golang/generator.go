@@ -16,13 +16,24 @@ type Generator struct {
 
 // ModelData is the data passed to model templates
 type ModelData struct {
-	Name        string
-	Description string
-	Properties  []PropertyData
+	Name          string
+	Description   string
+	Properties    []PropertyData
+	EmbeddedTypes []string // types to embed (from allOf with $ref)
+	IsArray       bool     // true for array type schemas
+	ArrayType     string   // the type for array items
+	IsMap         bool     // true for map type schemas
+	MapValueType  string   // the type for map values
 }
 
 type PropertyData struct {
 	Name, Type, Description, JsonTag string
+
+	// Metadata
+	Default    string // Formatted default value
+	ReadOnly   bool
+	WriteOnly  bool
+	Deprecated bool
 }
 
 type EnumData struct {
@@ -163,11 +174,43 @@ func (g *Generator) convertModels(models []core.Model) []ModelData {
 }
 
 func (g *Generator) convertModel(m core.Model) ModelData {
-	return ModelData{
-		Name:        m.Name,
-		Description: m.Description,
-		Properties:  g.convertProperties(m.Properties, m.Name),
+
+	// Extract embedded types from allOf (only $ref, not inline schemas)
+	var embeddedTypes []string
+	for _, allOfModel := range m.AllOf {
+		// Only embed if it's a reference (has a name but no properties)
+		if allOfModel.Name != "" && len(allOfModel.Properties) == 0 {
+			embeddedTypes = append(embeddedTypes, allOfModel.Name)
+		} else if len(allOfModel.Properties) > 0 {
+			// Inline schema properties should be merged into the main properties
+			for _, prop := range allOfModel.Properties {
+				m.Properties = append(m.Properties, prop)
+			}
+		}
 	}
+
+	return ModelData{
+		Name:          m.Name,
+		Description:   m.Description,
+		Properties:    g.convertProperties(m.Properties, m.Name),
+		EmbeddedTypes: embeddedTypes,
+		IsArray:       m.IsArray,
+		ArrayType:     g.getArrayItemsType(m.Items),
+		IsMap:         m.IsMap,
+		MapValueType:  g.getArrayItemsType(m.AdditionalProps),
+	}
+}
+
+func (g *Generator) getArrayItemsType(items *core.Property) string {
+	if items == nil {
+		return "interface{}"
+	}
+
+	if items.RefType != "" {
+		return items.RefType
+	}
+
+	return g.mapPrimitiveType(items.Type, items.Format)
 }
 
 func (g *Generator) convertProperties(props []core.Property, modelName string) []PropertyData {
@@ -178,9 +221,22 @@ func (g *Generator) convertProperties(props []core.Property, modelName string) [
 			Type:        g.mapType(p, modelName), // Map OpenAPI to Go types
 			Description: p.Description,
 			JsonTag:     p.Name, // TODO: apply naming convention
+
+			Default:    g.formatDefault(p.Default),
+			ReadOnly:   p.ReadOnly,
+			WriteOnly:  p.WriteOnly,
+			Deprecated: p.Deprecated,
 		})
 	}
 	return result
+}
+
+func (g *Generator) formatDefault(val interface{}) string {
+	if val == nil {
+		return ""
+	}
+
+	return fmt.Sprintf("%v", val)
 }
 
 // mapType converts OpenAPI types to Golang types.

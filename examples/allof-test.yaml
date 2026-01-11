@@ -1,0 +1,58 @@
+openapi: 3.0.0
+info:
+  title: AllOf Test API
+  version: 1.0.0
+  description: Test spec for allOf composition
+
+components:
+  schemas:
+    # Base types
+    Timestamped:
+      type: object
+      description: Base type with timestamps
+      properties:
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    
+    Named:
+      type: object
+      description: Base type with name
+      properties:
+        name:
+          type: string
+    
+    # Simple allOf with single $ref
+    Pet:
+      allOf:
+        - $ref: '#/components/schemas/Named'
+        - type: object
+          properties:
+            species:
+              type: string
+            age:
+              type: integer
+    
+    # allOf with multiple $refs
+    TrackedPet:
+      allOf:
+        - $ref: '#/components/schemas/Named'
+        - $ref: '#/components/schemas/Timestamped'
+        - type: object
+          properties:
+            species:
+              type: string
+    
+    # allOf with just inline properties (no $ref)
+    Dog:
+      allOf:
+        - $ref: '#/components/schemas/Pet'
+        - type: object
+          properties:
+            breed:
+              type: string
+            goodBoy:
+              type: boolean

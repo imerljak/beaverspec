@@ -1,0 +1,73 @@
+openapi: 3.0.0
+info:
+  title: Metadata Test API
+  version: 1.0.0
+  description: Test spec for field metadata (default, readOnly, writeOnly, deprecated)
+
+components:
+  schemas:
+    User:
+      type: object
+      description: A user account
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: User ID
+          readOnly: true
+        
+        username:
+          type: string
+          description: Unique username
+          
+        email:
+          type: string
+          format: email
+          description: User email address
+          
+        password:
+          type: string
+          description: User password
+          writeOnly: true
+          
+        role:
+          type: string
+          description: User role
+          default: "user"
+          enum:
+            - user
+            - admin
+            - moderator
+        
+        status:
+          type: string
+          description: Account status
+          default: "active"
+          
+        isActive:
+          type: boolean
+          description: Whether the account is active
+          default: true
+          
+        loginCount:
+          type: integer
+          description: Number of logins
+          default: 0
+          readOnly: true
+          
+        legacyField:
+          type: string
+          description: Old field no longer in use
+          deprecated: true
+          
+        createdAt:
+          type: string
+          format: date-time
+          description: Account creation timestamp
+          readOnly: true
+          
+        updatedAt:
+          type: string
+          format: date-time
+          description: Last update timestamp
+          readOnly: true

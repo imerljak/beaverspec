@@ -27,10 +27,22 @@ const (
 {{- end }}
 
 {{ range .Models }}
+{{- if .IsArray }}
+// {{ .Name }} {{ .Description }}
+type {{ .Name }} []{{ .ArrayType }}
+{{- else if .IsMap }}
+// {{ .Name }} {{ .Description }}
+type {{ .Name }} map[string]{{ .MapValueType }}
+{{- else }}
 // {{ .Name }} {{ .Description }}
 type {{ .Name }} struct {
-{{- range .Properties }}
-    {{ .Name | toPascalCase }} {{ .Type }} `json:"{{ .JsonTag }}"` {{ if .Description }}// {{ .Description }}{{ end }}
+{{- range .EmbeddedTypes }}
+    {{ . }}
 {{- end }}
+{{- range .Properties }}
+    {{ .Name | toPascalCase }} {{ .Type }} `json:"{{ .JsonTag }}"`{{- if or .Description .Default .ReadOnly .WriteOnly .Deprecated }} //{{- if .Description }} {{ .Description }}.{{- end }}{{- if .Default }} Default: {{ .Default }}.{{- end }}{{- if .ReadOnly }} Read-only.{{- end }}{{- if .WriteOnly }} Write-only.{{- end }}{{- if .Deprecated }} DEPRECATED.{{- end }}{{- end }}
+{{- end }}
+
 }
+{{- end }}
 {{ end }}

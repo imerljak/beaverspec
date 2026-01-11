@@ -83,6 +83,14 @@ type Model struct {
 	Required    []string
 	Enum        []interface{}
 
+	// For array type schemas
+	IsArray bool      // true if this is an array schema
+	Items   *Property // full items definition
+
+	// For map type schemas (additionalProperties)
+	IsMap           bool      // true if this is a map schema
+	AdditionalProps *Property // the type of map values
+
 	// Complex type handling
 	AllOf []Model
 	OneOf []Model
@@ -100,17 +108,20 @@ type Model struct {
 type Property struct {
 	Name        string
 	Type        string
+	Format      string
 	Description string
 	Required    bool
 	Nullable    bool
-	ReadOnly    bool
-	WriteOnly   bool
-	Format      string
-	Pattern     string
-	Default     interface{}
-	Example     interface{}
+	Enum        []interface{} // Enum values if this is an enum
+
+	// Field metadata
+	Default    interface{} // Default value
+	ReadOnly   bool        // Read-only field
+	WriteOnly  bool        // Write-only field
+	Deprecated bool        // Deprecated field
 
 	// Constraints
+	Pattern   string
 	MinLength *int
 	MaxLength *int
 	Minimum   *float64
@@ -118,15 +129,17 @@ type Property struct {
 	MinItems  *int
 	MaxItems  *int
 
-	Enum []interface{} // Enum values if this is an enum
-
-	// For arrays
-	Items *Property
+	// For nested types
+	RefType string // Referenced type name (for $ref or nested objects)
+	Items   *Property
 
 	// For objects
 	Properties []Property
 
-	RefType string // Referenced type name (for $ref or nested objects)
+	// Additional properties for maps
+	AdditionalProperties *Property
+
+	Example interface{}
 }
 
 type Discriminator struct {
