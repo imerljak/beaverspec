@@ -18,6 +18,7 @@ func TestModelsCompile(t *testing.T) {
 // TestModelsJSONSerialization verifies JSON marshaling/unmarshaling
 func TestModelsJSONSerialization(t *testing.T) {
     {{ range .Models }}
+    {{- if and (not .IsAnyOf) (not .IsOneOf) }}
     t.Run("{{ .Name }}", func(t *testing.T) {
         original := {{ .Name }}{}
         data, err := json.Marshal(original)
@@ -30,5 +31,6 @@ func TestModelsJSONSerialization(t *testing.T) {
             t.Fatalf("failed to unmarshal {{ .Name }}: %v", err)
         }
     })
+    {{- end }}
     {{ end }}
 }

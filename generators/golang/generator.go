@@ -24,6 +24,17 @@ type ModelData struct {
 	ArrayType     string   // the type for array items
 	IsMap         bool     // true for map type schemas
 	MapValueType  string   // the type for map values
+
+	// Union types (oneOf/anyOf)
+	IsOneOf       bool
+	IsAnyOf       bool
+	UnionVariants []string
+	Discriminator *DiscriminatorData
+}
+
+type DiscriminatorData struct {
+	PropertyName string            // e.g., "petType"
+	Mapping      map[string]string //e.g., { "cat": "Cat", "dog": "Dog" }
 }
 
 type PropertyData struct {
@@ -189,6 +200,54 @@ func (g *Generator) convertModel(m core.Model) ModelData {
 		}
 	}
 
+	// Extract union variants from oneOf/anyOf
+	var unionVariants []string
+	if m.IsOneOf {
+		for _, variant := range m.OneOf {
+			if variant.Name != "" {
+				unionVariants = append(unionVariants, variant.Name)
+			}
+		}
+	} else if m.IsAnyOf {
+		for _, variant := range m.AnyOf {
+			if variant.Name != "" {
+				unionVariants = append(unionVariants, variant.Name)
+			}
+		}
+	}
+
+	var discriminator *DiscriminatorData
+	if m.Discriminator != nil {
+		// Extract type names from mapping (strip OpenAPI $ref paths)
+		mapping := make(map[string]string)
+
+		if len(m.Discriminator.Mapping) > 0 {
+			// Explicit mapping provided
+			for key, value := range m.Discriminator.Mapping {
+				// value might be '#/components/schemas/Cat' or just 'Cat'
+				typeName := value
+				if strings.Contains(value, "/") {
+					// Extract last part after final '/'
+					typeName = value[strings.LastIndex(value, "/")+1:]
+				}
+				mapping[key] = typeName
+			}
+		} else {
+			// Implicit mapping - use variant names (lowercase as discriminator value)
+			for _, variant := range unionVariants {
+				// Use lowercase variant name as discriminator value
+				// e.g., "Circle" -> "circle"
+				key := strings.ToLower(variant)
+				mapping[key] = variant
+			}
+		}
+
+		discriminator = &DiscriminatorData{
+			PropertyName: m.Discriminator.PropertyName,
+			Mapping:      mapping,
+		}
+	}
+
 	return ModelData{
 		Name:          m.Name,
 		Description:   m.Description,
@@ -198,6 +257,11 @@ func (g *Generator) convertModel(m core.Model) ModelData {
 		ArrayType:     g.getArrayItemsType(m.Items),
 		IsMap:         m.IsMap,
 		MapValueType:  g.getArrayItemsType(m.AdditionalProps),
+
+		IsOneOf:       m.IsOneOf,
+		IsAnyOf:       m.IsAnyOf,
+		UnionVariants: unionVariants,
+		Discriminator: discriminator,
 	}
 }
 
@@ -322,6 +386,12 @@ func (g *Generator) collectImports(models []ModelData) []string {
 	importsNeeded := make(map[string]bool)
 
 	for _, model := range models {
+		// Check for oneOf types (need fmt for error messages)
+		if model.IsOneOf {
+			importsNeeded["fmt"] = true
+			importsNeeded["encoding/json"] = true
+		}
+
 		for _, prop := range model.Properties {
 			// Check if the type uses time.Time
 			if strings.Contains(prop.Type, "time.Time") {

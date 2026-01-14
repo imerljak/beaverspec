@@ -102,6 +102,38 @@ func (n *Normalizer) extractModels(schemas openapi3.Schemas) []core.Model {
 				AdditionalProps: n.extractAdditionalProperties(schema.AdditionalProperties.Schema),
 			}
 			models = append(models, model)
+		} else if len(schema.OneOf) > 0 {
+			// handle oneOf - require discriminator
+			if schema.Discriminator == nil {
+				// TODO: Add to validation errors instead of skipping
+				fmt.Printf("Warning: oneOf schema '%s'is missing required discriminator, skipping\n", name)
+				continue
+			}
+
+			oneOfVariants := n.extractOneOf(schema.OneOf, name)
+			discriminator := n.extractDiscriminator(schema.Discriminator)
+
+			model := core.Model{
+				Name:          name,
+				Description:   schema.Description,
+				IsOneOf:       true,
+				OneOf:         oneOfVariants,
+				Discriminator: discriminator,
+			}
+
+			models = append(models, model)
+		} else if len(schema.AnyOf) > 0 {
+			// handle anyOf
+			anyOfOptions := n.extractAnyOf(schema.AnyOf, name)
+
+			model := core.Model{
+				Name:        name,
+				Description: schema.Description,
+				IsAnyOf:     true,
+				AnyOf:       anyOfOptions,
+			}
+
+			models = append(models, model)
 		} else if schemaType == "array" {
 			// handle array type schema
 			model := core.Model{
@@ -135,6 +167,78 @@ func (n *Normalizer) extractModels(schemas openapi3.Schemas) []core.Model {
 
 	models = append(models, nestedModels...)
 	return models
+}
+
+func (n *Normalizer) extractOneOf(oneOfSchemas openapi3.SchemaRefs, parentName string) []core.Model {
+	var models []core.Model
+
+	for _, schemaRef := range oneOfSchemas {
+		if schemaRef == nil || schemaRef.Value == nil {
+			continue
+		}
+
+		var model core.Model
+
+		// oneOf should typically be $refs to other schemas
+		if schemaRef.Ref != "" {
+			model = core.Model{
+				Name: extractRefTypeName(schemaRef.Ref),
+			}
+		} else {
+			// Inline schema - less common for oneOf
+			schema := schemaRef.Value
+			props, _ := n.extractPropertiesWithNested(schema.Properties, schema.Required, parentName+"Variant")
+
+			model = core.Model{
+				Name:       parentName + "Variant",
+				Properties: props,
+			}
+		}
+		models = append(models, model)
+	}
+	return models
+}
+
+func (n *Normalizer) extractAnyOf(anyOfSchemas openapi3.SchemaRefs, parentName string) []core.Model {
+	// Similar to extractOneOf
+	var models []core.Model
+
+	for _, schemaRef := range anyOfSchemas {
+		if schemaRef == nil || schemaRef.Value == nil {
+			continue
+		}
+
+		var model core.Model
+
+		if schemaRef.Ref != "" {
+			model = core.Model{
+				Name: extractRefTypeName(schemaRef.Ref),
+			}
+		} else {
+			schema := schemaRef.Value
+			props, _ := n.extractPropertiesWithNested(schema.Properties, schema.Required, parentName+"Option")
+
+			model = core.Model{
+				Name:       parentName + "Option",
+				Properties: props,
+			}
+		}
+
+		models = append(models, model)
+	}
+
+	return models
+}
+
+func (n *Normalizer) extractDiscriminator(disc *openapi3.Discriminator) *core.Discriminator {
+	if disc == nil {
+		return nil
+	}
+
+	return &core.Discriminator{
+		PropertyName: disc.PropertyName,
+		Mapping:      disc.Mapping,
+	}
 }
 
 func (n *Normalizer) extractAllOf(allOfSchemas openapi3.SchemaRefs, parentName string) []core.Model {

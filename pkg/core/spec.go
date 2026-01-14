@@ -101,6 +101,10 @@ type Model struct {
 	IsDeprecated  bool
 	Example       interface{}
 
+	// Union type flags
+	IsOneOf bool
+	IsAnyOf bool
+
 	// Source location
 	SourcePath string // JSON Path in spec
 }

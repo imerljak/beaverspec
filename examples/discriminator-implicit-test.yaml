@@ -1,0 +1,39 @@
+openapi: 3.0.0
+info:
+  title: Implicit Discriminator Test API
+  version: 1.0.0
+  description: Test spec for oneOf with implicit discriminator (no mapping)
+
+components:
+  schemas:
+    Shape:
+      oneOf:
+        - $ref: '#/components/schemas/Circle'
+        - $ref: '#/components/schemas/Square'
+      discriminator:
+        propertyName: shapeType
+        # No explicit mapping - should use schema names
+
+    Circle:
+      type: object
+      required:
+        - shapeType
+        - radius
+      properties:
+        shapeType:
+          type: string
+        radius:
+          type: number
+          format: float
+
+    Square:
+      type: object
+      required:
+        - shapeType
+        - sideLength
+      properties:
+        shapeType:
+          type: string
+        sideLength:
+          type: number
+          format: float

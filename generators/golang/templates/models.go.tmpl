@@ -33,6 +33,53 @@ type {{ .Name }} []{{ .ArrayType }}
 {{- else if .IsMap }}
 // {{ .Name }} {{ .Description }}
 type {{ .Name }} map[string]{{ .MapValueType }}
+{{- else if .IsOneOf }}
+// {{ .Name }} {{ .Description }} (oneOf union type)
+type {{ .Name }} struct {
+{{- range .UnionVariants }}
+    {{ . }} *{{ . }} `json:"-"`
+{{- end }}
+}
+
+// UnmarshalJSON implements custom JSON unmarshalling for {{ .Name }}
+func (u *{{ .Name }}) UnmarshalJSON(data []byte) error {
+    // Extract discriminator field
+    var disc struct {
+        {{ .Discriminator.PropertyName | toPascalCase }} string `json:"{{ .Discriminator.PropertyName }}"`
+    }
+    if err := json.Unmarshal(data, &disc); err != nil {
+        return fmt.Errorf("failed to unmarshal discriminator for {{ .Name }}: %w", err)
+    }
+
+    // Switch on discriminator value
+    switch disc.{{ .Discriminator.PropertyName | toPascalCase }} {
+    {{- range $key, $value := .Discriminator.Mapping }}
+    case "{{ $key }}":
+        var variant {{ $value }}
+        if err := json.Unmarshal(data, &variant); err != nil {
+            return fmt.Errorf("failed to unmarshal {{ $value }}: %w", err)
+        }
+        u.{{ $value }} = &variant
+        return nil
+    {{- end }}
+    default:
+        return fmt.Errorf("unknown discriminator value for {{ .Name }}: %s", disc.{{ .Discriminator.PropertyName | toPascalCase }})
+    }
+}
+
+// MarshalJSON implements custom JSON marshaling for {{ .Name }}
+func (u {{ .Name }}) MarshalJSON() ([]byte, error) {
+{{- range .UnionVariants }}
+    if u.{{ . }} != nil {
+        return json.Marshal(u.{{ . }})
+    }
+{{- end }}
+    return []byte("null"), nil
+}
+
+{{- else if .IsAnyOf }}
+// {{ .Name }} {{ .Description }} (anyOf union type - represented as interface{})
+type {{ .Name }} interface{}
 {{- else }}
 // {{ .Name }} {{ .Description }}
 type {{ .Name }} struct {

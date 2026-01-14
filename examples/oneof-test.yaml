@@ -1,0 +1,79 @@
+openapi: 3.0.0
+info:
+  title: OneOf/AnyOf Test API
+  version: 1.0.0
+  description: Test spec for oneOf/anyOf polymorphism
+
+components:
+  schemas:
+    # Base types for pets
+    Cat:
+      type: object
+      required:
+        - petType
+        - name
+        - meowVolume
+      properties:
+        petType:
+          type: string
+          enum: [cat]
+        name:
+          type: string
+        meowVolume:
+          type: integer
+          description: How loud the cat meows (1-10)
+    
+    Dog:
+      type: object
+      required:
+        - petType
+        - name
+        - barkVolume
+      properties:
+        petType:
+          type: string
+          enum: [dog]
+        name:
+          type: string
+        barkVolume:
+          type: integer
+          description: How loud the dog barks (1-10)
+        breed:
+          type: string
+    
+    Bird:
+      type: object
+      required:
+        - petType
+        - name
+        - wingspan
+      properties:
+        petType:
+          type: string
+          enum: [bird]
+        name:
+          type: string
+        wingspan:
+          type: number
+          format: float
+          description: Wingspan in centimeters
+    
+    # oneOf with discriminator
+    Pet:
+      oneOf:
+        - $ref: '#/components/schemas/Cat'
+        - $ref: '#/components/schemas/Dog'
+        - $ref: '#/components/schemas/Bird'
+      discriminator:
+        propertyName: petType
+        mapping:
+          cat: '#/components/schemas/Cat'
+          dog: '#/components/schemas/Dog'
+          bird: '#/components/schemas/Bird'
+    
+    # anyOf without discriminator (simple case)
+    FlexibleValue:
+      description: A value that can be string or number
+      anyOf:
+        - type: string
+        - type: integer
