@@ -3,6 +3,9 @@ package template
 import (
 	"bytes"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"text/template"
 )
 
@@ -43,12 +46,50 @@ func (e *GoTemplateEngine) RegisterFunction(name string, fn interface{}) error {
 	return fmt.Errorf("function '%s' already exists", name)
 }
 
-// Load loads templates from a directory
+// Load loads templates from a directory (recursively)
 func (e *GoTemplateEngine) Load(templateDir string) error {
-	templates, err := template.New("root").Funcs(e.funcMap).ParseGlob(templateDir + "/*.tmpl")
+	templates := template.New("root").Funcs(e.funcMap)
+
+	// Walk the directory tree to find all .tmpl files
+	err := filepath.Walk(templateDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Skip directories
+		if info.IsDir() {
+			return nil
+		}
+
+		// Only process .tmpl files
+		if !strings.HasSuffix(path, ".tmpl") {
+			return nil
+		}
+
+		// Get relative path from templateDir for the template name
+		relPath, err := filepath.Rel(templateDir, path)
+		if err != nil {
+			return err
+		}
+
+		// Use forward slashes for template names (cross-platform)
+		templateName := filepath.ToSlash(relPath)
+
+		// Read template content
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+
+		// Parse the template with the correct name
+		_, err = templates.New(templateName).Parse(string(content))
+		return err
+	})
+
 	if err != nil {
-		return fmt.Errorf("failed to parse templates from %s: %w", templateDir, err)
+		return fmt.Errorf("failed to load templates from %s: %w", templateDir, err)
 	}
+
 	e.templates = templates
 	return nil
 }

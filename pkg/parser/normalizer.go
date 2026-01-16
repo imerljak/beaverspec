@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/imerljak/openapi-gen/pkg/core"
+	"github.com/imerljak/beaverspec/pkg/core"
 )
 
 type Normalizer struct {
@@ -31,10 +31,207 @@ func (n *Normalizer) Normalize(doc *openapi3.T) (*core.Spec, error) {
 		Version:   doc.OpenAPI,
 		Info:      n.extractInfo(doc.Info),
 		Models:    models,
-		Endpoints: []core.Endpoint{}, //TODO
+		Endpoints: n.extractEndpoints(doc.Paths),
 		Tags:      n.extractTags(doc.Tags),
 	}
 	return spec, nil
+}
+
+// extractEndpoints converts openapi3.Paths into []core.Endpoint
+func (n *Normalizer) extractEndpoints(paths *openapi3.Paths) []core.Endpoint {
+	var endpoints []core.Endpoint
+
+	for path, pathItem := range paths.Map() {
+		if pathItem == nil {
+			continue
+		}
+
+		// Extract operations for each HTTP method
+		operations := map[string]*openapi3.Operation{
+			"GET":     pathItem.Get,
+			"POST":    pathItem.Post,
+			"PUT":     pathItem.Put,
+			"DELETE":  pathItem.Delete,
+			"PATCH":   pathItem.Patch,
+			"HEAD":    pathItem.Head,
+			"OPTIONS": pathItem.Options,
+		}
+
+		for method, operation := range operations {
+			if operation == nil {
+				continue
+			}
+
+			endpoint := core.Endpoint{
+				Path:         path,
+				Method:       method,
+				OperationID:  operation.OperationID,
+				Summary:      operation.Summary,
+				Description:  operation.Description,
+				Tags:         operation.Tags,
+				Parameters:   n.extractParameters(operation.Parameters, pathItem.Parameters),
+				RequestBody:  n.extractRequestBody(operation.RequestBody),
+				Responses:    n.extractResponses(operation.Responses),
+				Security:     n.extractSecurityRequirements(operation.Security),
+				IsDeprecated: operation.Deprecated,
+			}
+
+			endpoints = append(endpoints, endpoint)
+		}
+	}
+
+	return endpoints
+}
+
+func (n *Normalizer) extractSecurityRequirements(security *openapi3.SecurityRequirements) []core.SecurityRequirement {
+	if security == nil {
+		return nil
+	}
+
+	var requirements []core.SecurityRequirement
+
+	for _, secReq := range *security {
+		for name, scopes := range secReq {
+			requirements = append(requirements, core.SecurityRequirement{
+				Name:   name,
+				Scopes: scopes,
+			})
+		}
+	}
+
+	return requirements
+}
+
+func (n *Normalizer) extractResponses(responses *openapi3.Responses) []core.Response {
+	if responses == nil {
+		return nil
+	}
+
+	var result []core.Response
+
+	for statusCode, responseRef := range responses.Map() {
+		if responseRef == nil || responseRef.Value == nil {
+			continue
+		}
+
+		response := responseRef.Value
+		content := make(map[string]core.MediaType)
+
+		for contentType, mediaType := range response.Content {
+			if mediaType == nil {
+				continue
+			}
+
+			content[contentType] = core.MediaType{
+				Schema:  n.extractParameterSchema(mediaType.Schema),
+				Example: mediaType.Example,
+			}
+		}
+
+		headers := make(map[string]core.Header)
+		for headerName, headerRef := range response.Headers {
+			if headerRef == nil || headerRef.Value == nil {
+				continue
+			}
+
+			header := headerRef.Value
+			headers[headerName] = core.Header{
+				Description: header.Description,
+				Required:    header.Required,
+				Schema:      n.extractParameterSchema(header.Schema),
+			}
+		}
+
+		result = append(result, core.Response{
+			StatusCode:  statusCode,
+			Description: *response.Description,
+			Content:     content,
+			Headers:     headers,
+		})
+	}
+
+	return result
+}
+
+func (n *Normalizer) extractRequestBody(bodyRef *openapi3.RequestBodyRef) *core.RequestBody {
+	if bodyRef == nil || bodyRef.Value == nil {
+		return nil
+	}
+
+	body := bodyRef.Value
+	content := make(map[string]core.MediaType)
+
+	for contentType, mediaType := range body.Content {
+		if mediaType == nil {
+			continue
+		}
+
+		content[contentType] = core.MediaType{
+			Schema:  n.extractParameterSchema(mediaType.Schema),
+			Example: mediaType.Example,
+		}
+	}
+
+	return &core.RequestBody{
+		Description: body.Description,
+		Required:    body.Required,
+		Content:     content,
+	}
+}
+
+func (n *Normalizer) extractParameters(opParams, pathParams openapi3.Parameters) []core.Parameter {
+	var params []core.Parameter
+
+	// Combine path-level and operation-level parameters
+	allParams := append(pathParams, opParams...)
+
+	for _, paramRef := range allParams {
+		if paramRef == nil || paramRef.Value == nil {
+			continue
+		}
+
+		param := paramRef.Value
+		schema := n.extractParameterSchema(param.Schema)
+
+		params = append(params, core.Parameter{
+			Name:         param.Name,
+			In:           param.In,
+			Description:  param.Description,
+			Required:     param.Required,
+			Schema:       schema,
+			Example:      param.Example,
+			IsDeprecated: param.Deprecated,
+		})
+	}
+	return params
+}
+
+func (n *Normalizer) extractParameterSchema(schemaRef *openapi3.SchemaRef) *core.Property {
+	if schemaRef == nil || schemaRef.Value == nil {
+		return nil
+	}
+
+	schema := schemaRef.Value
+	prop := &core.Property{}
+
+	// Handle $ref
+	if schemaRef.Ref != "" {
+		prop.RefType = extractRefTypeName(schemaRef.Ref)
+		return prop
+	}
+
+	// Extract type
+	if schema.Type != nil && len(*schema.Type) > 0 {
+		prop.Type = (*schema.Type)[0]
+		prop.Format = schema.Format
+	}
+
+	// Handle arrays
+	if prop.Type == "array" && schema.Items != nil {
+		prop.Items = n.extractParameterSchema(schema.Items)
+	}
+
+	return prop
 }
 
 // extractInfo converts openapi3.Info to core.SpecInfo

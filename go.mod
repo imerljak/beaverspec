@@ -1,4 +1,4 @@
-module github.com/imerljak/openapi-gen
+module github.com/imerljak/beaverspec
 
 go 1.25.5
 

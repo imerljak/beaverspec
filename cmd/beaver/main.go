@@ -8,11 +8,13 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/imerljak/openapi-gen/generators/golang"
-	"github.com/imerljak/openapi-gen/pkg/core"
-	"github.com/imerljak/openapi-gen/pkg/parser"
-	"github.com/imerljak/openapi-gen/pkg/plugin"
+	"github.com/imerljak/beaverspec/generators/golang"
+	"github.com/imerljak/beaverspec/pkg/core"
+	"github.com/imerljak/beaverspec/pkg/parser"
+	"github.com/imerljak/beaverspec/pkg/plugin"
 )
+
+const version = "0.1.0-alpha"
 
 func main() {
 	// 1. Parse flags
@@ -20,7 +22,15 @@ func main() {
 	outputFilePath := flag.String("output", ".", "output directory path")
 	generatorFlag := flag.String("generator", "go", "which generator to use, default 'go'")
 	packageNameFlag := flag.String("package", "models", "package name for generated code")
+	versionFlag := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
+
+	// Show version
+	if *versionFlag {
+		fmt.Printf("BeaverSpec v%s\n", version)
+		fmt.Println("A modern OpenAPI code generator")
+		os.Exit(0)
+	}
 
 	// 2. Initialize registry and register generators
 	registry := plugin.NewRegistry()

@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/imerljak/openapi-gen/pkg/core"
-	"github.com/imerljak/openapi-gen/pkg/template"
+	"github.com/imerljak/beaverspec/pkg/core"
+	"github.com/imerljak/beaverspec/pkg/template"
 )
 
 type Generator struct {
@@ -64,6 +64,38 @@ type TemplateData struct {
 	Imports     []string
 	Enums       []EnumData
 	Models      []ModelData
+}
+
+// ClientData represents data for client generation
+type ClientData struct {
+	PackageName   string
+	InterfaceName string
+	Operations    []OperationData
+	Imports       []string
+}
+
+// OperationData represents a single client operation
+type OperationData struct {
+	Name         string // Method name (e.g., "ListPets")
+	OperationID  string
+	Description  string
+	Method       string // HTTP method
+	Path         string // URL path
+	PathParams   []ParamData
+	QueryParams  []ParamData
+	HeaderParams []ParamData
+	HasBody      bool
+	BodyType     string // Type of request body
+	ReturnType   string // Return type
+	ErrorReturn  bool   // Whether to return error
+}
+
+// ParamData represents a parameter
+type ParamData struct {
+	Name        string
+	Type        string
+	Description string
+	Required    bool
 }
 
 func NewGenerator() *Generator {
@@ -150,18 +182,40 @@ func (g *Generator) Generate(spec *core.Spec, config *core.Config) (*core.Genera
 		return nil, fmt.Errorf("failed to format models_test.go: %w", err)
 	}
 
+	files := []core.GeneratedFile{
+		{
+			Path:    "models.go",
+			Content: []byte(formattedContent),
+		},
+		{
+			Path:    "models_test.go",
+			Content: []byte(formattedTestContent),
+		},
+	}
+
+	// Generate client if there are endpoints
+	if len(spec.Endpoints) > 0 {
+		clientData := g.convertEndpointsToClient(spec.Endpoints, packageName)
+
+		clientContent, err := engine.Render("client/client.go.tmpl", clientData)
+		if err != nil {
+			return nil, fmt.Errorf("failed to render client template: %w", err)
+		}
+
+		formattedClientContent, err := format.Source([]byte(clientContent))
+		if err != nil {
+			return nil, fmt.Errorf("failed to format client.go: %w", err)
+		}
+
+		files = append(files, core.GeneratedFile{
+			Path:    "client.go",
+			Content: formattedClientContent,
+		})
+	}
+
 	// Create the generated file
 	result := &core.GenerationResult{
-		Files: []core.GeneratedFile{
-			{
-				Path:    "models.go",
-				Content: []byte(formattedContent),
-			},
-			{
-				Path:    "models_test.go",
-				Content: []byte(formattedTestContent),
-			},
-		},
+		Files:    files,
 		Warnings: []core.GenerationError{},
 	}
 
@@ -174,6 +228,174 @@ func (g *Generator) SupportedFeatures() []core.Feature {
 		core.FeatureNullable,
 		// TODO: Add more as implemented
 	}
+}
+
+// convertEndpointsToClient converts core endpoints to client data
+func (g *Generator) convertEndpointsToClient(endpoints []core.Endpoint, packageName string) ClientData {
+	operations := make([]OperationData, 0, len(endpoints))
+
+	for _, ep := range endpoints {
+		op := g.convertEndpoint(ep)
+		operations = append(operations, op)
+	}
+
+	return ClientData{
+		PackageName:   packageName,
+		InterfaceName: "Client",
+		Operations:    operations,
+		Imports:       g.collectClientImports(operations),
+	}
+}
+
+// convertEndpoint converts a single endpoint to operation data
+func (g *Generator) convertEndpoint(ep core.Endpoint) OperationData {
+	// Generate method name from operation ID
+	methodName := g.toMethodName(ep.OperationID)
+
+	// Extract parameters by location
+	paramMap := g.extractParametersByLocation(ep.Parameters)
+
+	// Determine body type and return type
+	bodyType := g.getRequestBodyType(ep.RequestBody)
+	returnType := g.getResponseType(ep.Responses)
+
+	return OperationData{
+		Name:         methodName,
+		OperationID:  ep.OperationID,
+		Description:  ep.Description,
+		Method:       ep.Method,
+		Path:         ep.Path,
+		PathParams:   paramMap["path"],
+		QueryParams:  paramMap["query"],
+		HeaderParams: paramMap["header"],
+		HasBody:      bodyType != "",
+		BodyType:     bodyType,
+		ReturnType:   returnType,
+		ErrorReturn:  true, // Always return error
+	}
+}
+
+// getResponseType determines the return type from responses
+func (g *Generator) getResponseType(responses []core.Response) string {
+	// Look for 200, 201, or default success response
+	for _, resp := range responses {
+		if resp.StatusCode == "200" || resp.StatusCode == "201" {
+			// Look for JSON content
+			if mediaType, ok := resp.Content["application/json"]; ok {
+				if mediaType.Schema != nil {
+					if mediaType.Schema.RefType != "" {
+						return "*" + mediaType.Schema.RefType
+					}
+					return g.mapParameterType(mediaType.Schema)
+				}
+			}
+		}
+	}
+
+	// No body response
+	return ""
+}
+
+// getRequestBodyType determines the request body type
+func (g *Generator) getRequestBodyType(body *core.RequestBody) string {
+	if body == nil {
+		return ""
+	}
+
+	// Look for JSON content
+	if mediaType, ok := body.Content["application/json"]; ok {
+		if mediaType.Schema != nil {
+			if mediaType.Schema.RefType != "" {
+				return "*" + mediaType.Schema.RefType
+			}
+			return g.mapParameterType(mediaType.Schema)
+		}
+	}
+	return ""
+}
+
+// extractParamsByLocation filters parameters by location
+func (g *Generator) extractParametersByLocation(parameters []core.Parameter) map[string][]ParamData {
+	result := make(map[string][]ParamData, 3)
+
+	for _, p := range parameters {
+		paramType := g.mapParameterType(p.Schema)
+
+		if !p.Required && (p.In == "query" || p.In == "header") {
+			paramType = "*" + paramType
+		}
+
+		if result[p.In] == nil {
+			result[p.In] = make([]ParamData, 0, len(parameters))
+		}
+
+		result[p.In] = append(result[p.In], ParamData{
+			Name:        p.Name,
+			Type:        paramType,
+			Description: p.Description,
+			Required:    p.Required,
+		})
+	}
+
+	return result
+}
+
+// mapParameterType maps a parameter schema to Go type
+func (g *Generator) mapParameterType(schema *core.Property) string {
+	if schema == nil {
+		return "string"
+	}
+
+	// Handle references
+	if schema.RefType != "" {
+		return schema.RefType
+	}
+
+	// Handle arrays
+	if schema.Type == "array" && schema.Items != nil {
+		itemType := g.mapParameterType(schema.Items)
+		return "[]" + itemType
+	}
+
+	// Map primitive types
+	return g.mapPrimitiveType(schema.Type, schema.Format)
+}
+
+// toMethodName converts an operation ID to a Go method name
+func (g *Generator) toMethodName(operationID string) string {
+	if operationID == "" {
+		return "Execute"
+	}
+
+	// PascalCase the operationID
+	return template.ToPascalCase(operationID)
+}
+
+func (g *Generator) collectClientImports(operations []OperationData) []string {
+	imports := make(map[string]bool)
+
+	// Always need these for HTTP client
+	imports["context"] = true
+	imports["net/http"] = true
+	imports["fmt"] = true
+	imports["io"] = true
+	imports["encoding/json"] = true
+
+	// Check if any operation uses net/url for query params
+	for _, op := range operations {
+		if len(op.QueryParams) > 0 {
+			imports["net/url"] = true
+			break
+		}
+	}
+
+	// Covert to sorted slice
+	result := make([]string, 0, len(imports))
+	for imp := range imports {
+		result = append(result, imp)
+	}
+	sort.Strings(result)
+	return result
 }
 
 func (g *Generator) convertModels(models []core.Model) []ModelData {

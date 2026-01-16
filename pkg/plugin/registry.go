@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/imerljak/openapi-gen/pkg/core"
+	"github.com/imerljak/beaverspec/pkg/core"
 )
 
 // Registry manages available generators
