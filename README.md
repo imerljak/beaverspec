@@ -145,8 +145,6 @@ Generates models and client for the classic Swagger Petstore API.
 
 ## Roadmap
 
-See [ROADMAP.md](./ROADMAP.md) for the complete development plan.
-
 **Phase 2** (In Progress):
 - Server generation (handlers, routes, middleware)
 - Multiple framework support (Chi, Echo, Gin)
@@ -185,7 +183,7 @@ go run ./cmd/beaver -spec examples/petstore.yaml -output generated
 
 ## Contributing
 
-Contributions are welcome! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
+Contributions are welcome! Feel free to open issues or submit pull requests.
 
 ## Philosophy
 
