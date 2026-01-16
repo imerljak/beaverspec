@@ -162,15 +162,6 @@ See [ROADMAP.md](./ROADMAP.md) for the complete development plan.
 - Additional languages (Java, Rust, etc.)
 - Advanced features (streaming, webhooks, etc.)
 
-## Documentation
-
-- [CLAUDE.md](./CLAUDE.md) - Project overview and context
-- [ARCHITECTURE.md](./ARCHITECTURE.md) - System architecture
-- [TECHNICAL_SPEC.md](./TECHNICAL_SPEC.md) - Technical specifications
-- [DESIGN_DECISIONS.md](./DESIGN_DECISIONS.md) - Key design decisions
-- [PHASE_2_ROADMAP.md](./PHASE_2_ROADMAP.md) - Detailed Phase 2 plan
-- [SHARED_TOOLING.md](./SHARED_TOOLING.md) - Cross-language utilities
-
 ## Development
 
 ### Prerequisites
