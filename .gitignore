@@ -108,3 +108,5 @@ Temporary Items
 
 # Project specific
 /generated
+/beaver
+/beaver.exe
