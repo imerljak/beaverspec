@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/imerljak/beaverspec/pkg/codegen"
 	"github.com/imerljak/beaverspec/pkg/core"
 	"github.com/imerljak/beaverspec/pkg/template"
 )
@@ -71,7 +72,7 @@ type ClientData struct {
 	PackageName   string
 	InterfaceName string
 	Operations    []OperationData
-	Imports       []string
+	Imports       []codegen.Import
 }
 
 // OperationData represents a single client operation
@@ -133,11 +134,16 @@ func (g *Generator) Validate(spec *core.Spec, config *core.Config) []core.Valida
 func (g *Generator) Generate(spec *core.Spec, config *core.Config) (*core.GenerationResult, error) {
 
 	packageName := "models"
+	modulePath := "github.com/example/project" // default
 	if config.Options != nil {
 		if pkgName, ok := config.Options["package"].(string); ok && pkgName != "" {
 			packageName = pkgName
 		}
+		if mp, ok := config.Options["modulePath"].(string); ok && mp != "" {
+			modulePath = mp
+		}
 	}
+	baseDir := config.OutputDir // e.g., "generated"
 
 	models := g.convertModels(spec.Models)
 
@@ -184,18 +190,18 @@ func (g *Generator) Generate(spec *core.Spec, config *core.Config) (*core.Genera
 
 	files := []core.GeneratedFile{
 		{
-			Path:    "models.go",
+			Path:    "models/models.go",
 			Content: []byte(formattedContent),
 		},
 		{
-			Path:    "models_test.go",
+			Path:    "models/models_test.go",
 			Content: []byte(formattedTestContent),
 		},
 	}
 
 	// Generate client if there are endpoints
 	if len(spec.Endpoints) > 0 {
-		clientData := g.convertEndpointsToClient(spec.Endpoints, packageName)
+		clientData := g.convertEndpointsToClient(spec.Endpoints, modulePath, baseDir)
 
 		clientContent, err := engine.Render("client/client.go.tmpl", clientData)
 		if err != nil {
@@ -208,7 +214,7 @@ func (g *Generator) Generate(spec *core.Spec, config *core.Config) (*core.Genera
 		}
 
 		files = append(files, core.GeneratedFile{
-			Path:    "client.go",
+			Path:    "client/client.go",
 			Content: formattedClientContent,
 		})
 	}
@@ -231,7 +237,15 @@ func (g *Generator) SupportedFeatures() []core.Feature {
 }
 
 // convertEndpointsToClient converts core endpoints to client data
-func (g *Generator) convertEndpointsToClient(endpoints []core.Endpoint, packageName string) ClientData {
+func (g *Generator) convertEndpointsToClient(endpoints []core.Endpoint, modulePath, baseDir string) ClientData {
+
+	imports := codegen.NewImportManager(modulePath, baseDir, "client")
+	imports.Add("context")
+	imports.Add("net/http")
+	imports.Add("fmt")
+	imports.Add("io")
+	imports.Add("encoding/json")
+
 	operations := make([]OperationData, 0, len(endpoints))
 
 	for _, ep := range endpoints {
@@ -239,11 +253,20 @@ func (g *Generator) convertEndpointsToClient(endpoints []core.Endpoint, packageN
 		operations = append(operations, op)
 	}
 
+	for _, op := range operations {
+		if len(op.QueryParams) > 0 {
+			imports.Add("net/url")
+			break
+		}
+	}
+
+	imports.AddSibling("models")
+
 	return ClientData{
-		PackageName:   packageName,
+		PackageName:   "client",
 		InterfaceName: "Client",
 		Operations:    operations,
-		Imports:       g.collectClientImports(operations),
+		Imports:       imports.GetImports(),
 	}
 }
 
@@ -284,7 +307,7 @@ func (g *Generator) getResponseType(responses []core.Response) string {
 			if mediaType, ok := resp.Content["application/json"]; ok {
 				if mediaType.Schema != nil {
 					if mediaType.Schema.RefType != "" {
-						return "*" + mediaType.Schema.RefType
+						return "*models." + mediaType.Schema.RefType // TODO: parameterize the package name
 					}
 					return g.mapParameterType(mediaType.Schema)
 				}
@@ -306,7 +329,7 @@ func (g *Generator) getRequestBodyType(body *core.RequestBody) string {
 	if mediaType, ok := body.Content["application/json"]; ok {
 		if mediaType.Schema != nil {
 			if mediaType.Schema.RefType != "" {
-				return "*" + mediaType.Schema.RefType
+				return "*models." + mediaType.Schema.RefType // TODO: parameterize the package name
 			}
 			return g.mapParameterType(mediaType.Schema)
 		}
@@ -369,33 +392,6 @@ func (g *Generator) toMethodName(operationID string) string {
 
 	// PascalCase the operationID
 	return template.ToPascalCase(operationID)
-}
-
-func (g *Generator) collectClientImports(operations []OperationData) []string {
-	imports := make(map[string]bool)
-
-	// Always need these for HTTP client
-	imports["context"] = true
-	imports["net/http"] = true
-	imports["fmt"] = true
-	imports["io"] = true
-	imports["encoding/json"] = true
-
-	// Check if any operation uses net/url for query params
-	for _, op := range operations {
-		if len(op.QueryParams) > 0 {
-			imports["net/url"] = true
-			break
-		}
-	}
-
-	// Covert to sorted slice
-	result := make([]string, 0, len(imports))
-	for imp := range imports {
-		result = append(result, imp)
-	}
-	sort.Strings(result)
-	return result
 }
 
 func (g *Generator) convertModels(models []core.Model) []ModelData {

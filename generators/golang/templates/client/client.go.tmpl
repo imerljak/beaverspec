@@ -6,9 +6,14 @@ import (
     "bytes"
     "strings"
 {{- range .Imports }}
-    "{{ . }}"
+    {{- if .Alias }}
+    {{ .Alias }} "{{ .Path }}"
+    {{- else }}
+    "{{ .Path }}"
+    {{- end }}
 {{- end }}
 )
+
 
 // {{ .InterfaceName }} defines the interface for the API client
 type {{ .InterfaceName }} interface {
