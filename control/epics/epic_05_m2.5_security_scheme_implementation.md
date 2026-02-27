@@ -1,7 +1,7 @@
 # M2.5: Security Scheme Implementation
 
 **Type**: Epic
-**Status**: Todo
+**Status**: Done
 
 ## Description
 **Duration**: 5-7 days

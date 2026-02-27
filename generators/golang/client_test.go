@@ -25,7 +25,7 @@ func TestConvertEndpointsToClient(t *testing.T) {
 
 	// Create generator and convert endpoints
 	gen := NewGenerator()
-	clientData := gen.convertEndpointsToClient(spec.Endpoints, "github.com/example/project", "generated")
+	clientData := gen.convertEndpointsToClient(spec.Endpoints, spec.SecurityDef, "github.com/example/project", "generated")
 
 	// Verify basic structure
 	if clientData.InterfaceName != "Client" {

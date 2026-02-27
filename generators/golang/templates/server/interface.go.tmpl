@@ -18,3 +18,22 @@ type {{ .Name }}Handler interface {
 {{- end }}
 }
 {{- end }}
+
+{{- range .SecuritySchemes }}
+// {{ .Name | toPascalCase }}AuthMiddleware is a middleware interface for the {{ .Name }} security scheme
+type {{ .Name | toPascalCase }}AuthMiddleware interface {
+{{- if .IsBearer }}
+	// ValidateBearerToken validates the provided Bearer token and returns an authenticated context
+	ValidateBearerToken(ctx context.Context, token string) (context.Context, error)
+{{- else if .IsBasicAuth }}
+	// ValidateBasicAuth validates the provided Basic auth credentials and returns an authenticated context
+	ValidateBasicAuth(ctx context.Context, username, password string) (context.Context, error)
+{{- else if .IsAPIKey }}
+	// ValidateAPIKey validates the provided API key and returns an authenticated context
+	ValidateAPIKey(ctx context.Context, key string) (context.Context, error)
+{{- else if .IsOAuth2 }}
+	// ValidateOAuth2Token validates the OAuth2 token and returns an authenticated context
+	ValidateOAuth2Token(ctx context.Context, token string) (context.Context, error)
+{{- end }}
+}
+{{- end }}

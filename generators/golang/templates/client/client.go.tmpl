@@ -62,6 +62,35 @@ func WithHeader(key, value string) ClientOption {
     }
 }
 
+{{- range .SecuritySchemes }}
+{{- if .IsBearer }}
+// With{{ .Name | toPascalCase }}Token sets a Bearer token for the {{ .Name }} security scheme
+func With{{ .Name | toPascalCase }}Token(token string) ClientOption {
+    return WithHeader("Authorization", "Bearer "+token)
+}
+{{- else if .IsBasicAuth }}
+// With{{ .Name | toPascalCase }}BasicAuth sets Basic Auth credentials for the {{ .Name }} security scheme
+func With{{ .Name | toPascalCase }}BasicAuth(username, password string) ClientOption {
+    encoded := username + ":" + password
+    return WithHeader("Authorization", "Basic "+encoded)
+}
+{{- else if .IsAPIKey }}
+{{- if eq .In "header" }}
+// With{{ .Name | toPascalCase }}APIKey sets a header API key for the {{ .Name }} security scheme
+func With{{ .Name | toPascalCase }}APIKey(key string) ClientOption {
+    return WithHeader("{{ .KeyName }}", key)
+}
+{{- else if eq .In "query" }}
+// {{ .Name | toPascalCase }}APIKey returns the query-param key for use with query string building
+func With{{ .Name | toPascalCase }}APIKey(key string) ClientOption {
+    return func(c *HTTPClient) {
+        c.headers["X-API-Key-{{ .KeyName }}"] = key // stored, injected as query param per request
+    }
+}
+{{- end }}
+{{- end }}
+{{- end }}
+
 {{- range .Operations }}
 
 // {{ .Name }} {{ .Description }}

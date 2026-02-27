@@ -69,17 +69,32 @@ type TemplateData struct {
 
 // ClientData represents data for client generation
 type ClientData struct {
-	PackageName   string
-	InterfaceName string
-	Operations    []OperationData
-	Imports       []codegen.Import
+	PackageName     string
+	InterfaceName   string
+	Operations      []OperationData
+	Imports         []codegen.Import
+	SecuritySchemes []SecuritySchemeData
 }
 
 // ServerData represents data for server generation
 type ServerData struct {
-	PackageName string
-	Imports     []codegen.Import
-	Handlers    []HandlerGroup
+	PackageName     string
+	Imports         []codegen.Import
+	Handlers        []HandlerGroup
+	SecuritySchemes []SecuritySchemeData
+}
+
+// SecuritySchemeData is a template-friendly representation of a security scheme
+type SecuritySchemeData struct {
+	Name        string
+	Type        string
+	In          string // for apiKey
+	KeyName     string // header/query/cookie name for apiKey
+	Scheme      string // "bearer" or "basic" for http
+	IsAPIKey    bool
+	IsBearer    bool
+	IsBasicAuth bool
+	IsOAuth2    bool
 }
 
 // HandlerGroup groups operations by tag for routing
@@ -98,6 +113,7 @@ type OperationData struct {
 	PathParams      []ParamData
 	QueryParams     []ParamData
 	HeaderParams    []ParamData
+	Security        []string // Security requirement names for this operation
 	HasBody         bool
 	BodyType        string // Type of request body
 	Responses       []ResponseData
@@ -236,7 +252,7 @@ func (g *Generator) Generate(spec *core.Spec, config *core.Config) (*core.Genera
 
 	// Generate client if there are endpoints
 	if len(spec.Endpoints) > 0 {
-		clientData := g.convertEndpointsToClient(spec.Endpoints, modulePath, baseDir)
+		clientData := g.convertEndpointsToClient(spec.Endpoints, spec.SecurityDef, modulePath, baseDir)
 
 		clientContent, err := engine.Render("client/client.go.tmpl", clientData)
 		if err != nil {
@@ -254,7 +270,7 @@ func (g *Generator) Generate(spec *core.Spec, config *core.Config) (*core.Genera
 		})
 
 		// Generate server logic
-		serverData := g.convertEndpointsToServer(spec.Endpoints, modulePath, baseDir)
+		serverData := g.convertEndpointsToServer(spec.Endpoints, spec.SecurityDef, modulePath, baseDir)
 
 		// interface
 		serverInterfaceContent, err := engine.Render("server/interface.go.tmpl", serverData)
@@ -305,7 +321,7 @@ func (g *Generator) SupportedFeatures() []core.Feature {
 }
 
 // convertEndpointsToClient converts core endpoints to client data
-func (g *Generator) convertEndpointsToClient(endpoints []core.Endpoint, modulePath, baseDir string) ClientData {
+func (g *Generator) convertEndpointsToClient(endpoints []core.Endpoint, securityDef []core.SecurityScheme, modulePath, baseDir string) ClientData {
 
 	imports := codegen.NewImportManager(modulePath, baseDir, "client")
 	imports.Add("context")
@@ -344,15 +360,16 @@ func (g *Generator) convertEndpointsToClient(endpoints []core.Endpoint, modulePa
 	imports.AddSibling("models")
 
 	return ClientData{
-		PackageName:   "client",
-		InterfaceName: "Client",
-		Operations:    operations,
-		Imports:       imports.GetImports(),
+		PackageName:     "client",
+		InterfaceName:   "Client",
+		Operations:      operations,
+		Imports:         imports.GetImports(),
+		SecuritySchemes: g.convertSecuritySchemes(securityDef),
 	}
 }
 
 // convertEndpointsToServer converts core endpoints into server structures
-func (g *Generator) convertEndpointsToServer(endpoints []core.Endpoint, modulePath, baseDir string) ServerData {
+func (g *Generator) convertEndpointsToServer(endpoints []core.Endpoint, securityDef []core.SecurityScheme, modulePath, baseDir string) ServerData {
 	imports := codegen.NewImportManager(modulePath, baseDir, "server")
 	imports.Add("context")
 	imports.Add("net/http")
@@ -402,16 +419,31 @@ func (g *Generator) convertEndpointsToServer(endpoints []core.Endpoint, modulePa
 
 	imports.AddSibling("models")
 
-	// Add fmt/io imports if operations need them (future-proofing)
-	// We add them statically for now as they are very common
-	imports.Add("fmt")
-	imports.Add("io")
-
 	return ServerData{
-		PackageName: "server",
-		Imports:     imports.GetImports(),
-		Handlers:    handlers,
+		PackageName:     "server",
+		Imports:         imports.GetImports(),
+		Handlers:        handlers,
+		SecuritySchemes: g.convertSecuritySchemes(securityDef),
 	}
+}
+
+// convertSecuritySchemes converts core.SecurityScheme slice into template-friendly SecuritySchemeData
+func (g *Generator) convertSecuritySchemes(schemes []core.SecurityScheme) []SecuritySchemeData {
+	result := make([]SecuritySchemeData, 0, len(schemes))
+	for _, s := range schemes {
+		result = append(result, SecuritySchemeData{
+			Name:        s.Name,
+			Type:        s.Type,
+			In:          s.In,
+			KeyName:     s.Name, // For apiKey, Name doubles as parameter name
+			Scheme:      s.Scheme,
+			IsAPIKey:    codegen.IsAPIKey(s.Type),
+			IsBearer:    codegen.IsHTTP(s.Type) && codegen.IsBearer(s.Scheme),
+			IsBasicAuth: codegen.IsHTTP(s.Type) && codegen.IsBasicAuth(s.Scheme),
+			IsOAuth2:    codegen.IsOAuth2(s.Type),
+		})
+	}
+	return result
 }
 
 // convertEndpoint converts a single endpoint to operation data

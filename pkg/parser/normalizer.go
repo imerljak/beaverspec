@@ -27,15 +27,81 @@ func (n *Normalizer) Normalize(doc *openapi3.T) (*core.Spec, error) {
 		models = []core.Model{} // Empty slice if no components
 	}
 
+	var securityDef []core.SecurityScheme
+	if doc.Components != nil && doc.Components.SecuritySchemes != nil {
+		securityDef = n.extractSecuritySchemes(doc.Components.SecuritySchemes)
+	}
+
 	spec := &core.Spec{
-		Raw:       doc,
-		Version:   doc.OpenAPI,
-		Info:      n.extractInfo(doc.Info),
-		Models:    models,
-		Endpoints: n.extractEndpoints(doc.Paths),
-		Tags:      n.extractTags(doc.Tags),
+		Raw:         doc,
+		Version:     doc.OpenAPI,
+		Info:        n.extractInfo(doc.Info),
+		Models:      models,
+		Endpoints:   n.extractEndpoints(doc.Paths),
+		Tags:        n.extractTags(doc.Tags),
+		SecurityDef: securityDef,
 	}
 	return spec, nil
+}
+
+// extractSecuritySchemes converts openapi3 security scheme components into core.SecurityScheme
+func (n *Normalizer) extractSecuritySchemes(schemes openapi3.SecuritySchemes) []core.SecurityScheme {
+	result := make([]core.SecurityScheme, 0, len(schemes))
+	for name, ref := range schemes {
+		if ref == nil || ref.Value == nil {
+			continue
+		}
+		s := ref.Value
+		scheme := core.SecurityScheme{
+			Name:             name,
+			Type:             string(s.Type),
+			Description:      s.Description,
+			In:               string(s.In),
+			Scheme:           s.Scheme,
+			BearerFormat:     s.BearerFormat,
+			OpenIDConnectURL: s.OpenIdConnectUrl,
+		}
+		if s.Flows != nil {
+			scheme.Flows = n.extractOAuthFlows(s.Flows)
+		}
+		result = append(result, scheme)
+	}
+	return result
+}
+
+// extractOAuthFlows converts openapi3 OAuth flows into core.OAuthFlows
+func (n *Normalizer) extractOAuthFlows(flows *openapi3.OAuthFlows) *core.OAuthFlows {
+	of := &core.OAuthFlows{}
+	if flows.Implicit != nil {
+		of.Implicit = &core.OAuthFlow{
+			AuthorizationURL: flows.Implicit.AuthorizationURL,
+			RefreshURL:       flows.Implicit.RefreshURL,
+			Scopes:           flows.Implicit.Scopes,
+		}
+	}
+	if flows.Password != nil {
+		of.Password = &core.OAuthFlow{
+			TokenURL:   flows.Password.TokenURL,
+			RefreshURL: flows.Password.RefreshURL,
+			Scopes:     flows.Password.Scopes,
+		}
+	}
+	if flows.ClientCredentials != nil {
+		of.ClientCredentials = &core.OAuthFlow{
+			TokenURL:   flows.ClientCredentials.TokenURL,
+			RefreshURL: flows.ClientCredentials.RefreshURL,
+			Scopes:     flows.ClientCredentials.Scopes,
+		}
+	}
+	if flows.AuthorizationCode != nil {
+		of.AuthorizationCode = &core.OAuthFlow{
+			AuthorizationURL: flows.AuthorizationCode.AuthorizationURL,
+			TokenURL:         flows.AuthorizationCode.TokenURL,
+			RefreshURL:       flows.AuthorizationCode.RefreshURL,
+			Scopes:           flows.AuthorizationCode.Scopes,
+		}
+	}
+	return of
 }
 
 // extractEndpoints converts openapi3.Paths into []core.Endpoint
