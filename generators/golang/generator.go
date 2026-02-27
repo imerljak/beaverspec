@@ -90,18 +90,26 @@ type HandlerGroup struct {
 
 // OperationData represents a single client/server operation
 type OperationData struct {
-	Name         string // Method name (e.g., "ListPets")
-	OperationID  string
-	Description  string
-	Method       string // HTTP method
-	Path         string // URL path
-	PathParams   []ParamData
-	QueryParams  []ParamData
-	HeaderParams []ParamData
-	HasBody      bool
-	BodyType     string // Type of request body
-	ReturnType   string // Return type
-	ErrorReturn  bool   // Whether to return error
+	Name            string // Method name (e.g., "ListPets")
+	OperationID     string
+	Description     string
+	Method          string // HTTP method
+	Path            string // URL path
+	PathParams      []ParamData
+	QueryParams     []ParamData
+	HeaderParams    []ParamData
+	HasBody         bool
+	BodyType        string // Type of request body
+	ReturnType      string // Return type
+	ErrorReturn     bool   // Whether to return error
+	ContentType     string
+	AcceptType      string
+	IsJSONBody      bool
+	IsXMLBody       bool
+	IsFormBody      bool
+	IsMultipartBody bool
+	IsJSONResponse  bool
+	IsXMLResponse   bool
 }
 
 // ParamData represents a parameter
@@ -290,19 +298,24 @@ func (g *Generator) convertEndpointsToClient(endpoints []core.Endpoint, modulePa
 	imports.Add("net/http")
 	imports.Add("fmt")
 	imports.Add("io")
-	imports.Add("encoding/json")
 
 	operations := make([]OperationData, 0, len(endpoints))
 
 	for _, ep := range endpoints {
 		op := g.convertEndpoint(ep)
 		operations = append(operations, op)
-	}
 
-	for _, op := range operations {
-		if len(op.QueryParams) > 0 {
+		if op.IsJSONBody || op.IsJSONResponse {
+			imports.Add("encoding/json")
+		}
+		if op.IsXMLBody || op.IsXMLResponse {
+			imports.Add("encoding/xml")
+		}
+		if op.IsFormBody || len(op.QueryParams) > 0 {
 			imports.Add("net/url")
-			break
+		}
+		if op.IsFormBody {
+			imports.Add("strings")
 		}
 	}
 
@@ -321,7 +334,6 @@ func (g *Generator) convertEndpointsToServer(endpoints []core.Endpoint, modulePa
 	imports := codegen.NewImportManager(modulePath, baseDir, "server")
 	imports.Add("context")
 	imports.Add("net/http")
-	imports.Add("encoding/json")
 
 	groupsMap := make(map[string][]OperationData)
 
@@ -335,6 +347,13 @@ func (g *Generator) convertEndpointsToServer(endpoints []core.Endpoint, modulePa
 		}
 
 		groupsMap[groupName] = append(groupsMap[groupName], op)
+
+		if op.IsJSONBody || op.IsJSONResponse {
+			imports.Add("encoding/json")
+		}
+		if op.IsXMLBody || op.IsXMLResponse {
+			imports.Add("encoding/xml")
+		}
 	}
 
 	var handlers []HandlerGroup
@@ -373,62 +392,68 @@ func (g *Generator) convertEndpoint(ep core.Endpoint) OperationData {
 	paramMap := g.extractParametersByLocation(ep.Parameters)
 
 	// Determine body type and return type
-	bodyType := g.getRequestBodyType(ep.RequestBody)
-	returnType := g.getResponseType(ep.Responses)
+	bodyType, contentType := g.getRequestBodyType(ep.RequestBody)
+	returnType, acceptType := g.getResponseType(ep.Responses)
 
 	return OperationData{
-		Name:         methodName,
-		OperationID:  ep.OperationID,
-		Description:  ep.Description,
-		Method:       ep.Method,
-		Path:         ep.Path,
-		PathParams:   paramMap["path"],
-		QueryParams:  paramMap["query"],
-		HeaderParams: paramMap["header"],
-		HasBody:      bodyType != "",
-		BodyType:     bodyType,
-		ReturnType:   returnType,
-		ErrorReturn:  true, // Always return error
+		Name:            methodName,
+		OperationID:     ep.OperationID,
+		Description:     ep.Description,
+		Method:          ep.Method,
+		Path:            ep.Path,
+		PathParams:      paramMap["path"],
+		QueryParams:     paramMap["query"],
+		HeaderParams:    paramMap["header"],
+		HasBody:         bodyType != "",
+		BodyType:        bodyType,
+		ReturnType:      returnType,
+		ErrorReturn:     true, // Always return error
+		ContentType:     contentType,
+		AcceptType:      acceptType,
+		IsJSONBody:      codegen.IsJSON(contentType),
+		IsXMLBody:       codegen.IsXML(contentType),
+		IsFormBody:      codegen.IsFormURLEncoded(contentType),
+		IsMultipartBody: codegen.IsMultipartForm(contentType),
+		IsJSONResponse:  codegen.IsJSON(acceptType),
+		IsXMLResponse:   codegen.IsXML(acceptType),
 	}
 }
 
 // getResponseType determines the return type from responses
-func (g *Generator) getResponseType(responses []core.Response) string {
+func (g *Generator) getResponseType(responses []core.Response) (string, string) {
 	// Look for 200, 201, or default success response
 	for _, resp := range responses {
 		if resp.StatusCode == "200" || resp.StatusCode == "201" {
-			// Look for JSON content
-			if mediaType, ok := resp.Content["application/json"]; ok {
+			for contentType, mediaType := range resp.Content {
 				if mediaType.Schema != nil {
 					if mediaType.Schema.RefType != "" {
-						return "*models." + mediaType.Schema.RefType // TODO: parameterize the package name
+						return "*models." + mediaType.Schema.RefType, contentType // TODO: parameterize the package name
 					}
-					return g.mapParameterType(mediaType.Schema)
+					return g.mapParameterType(mediaType.Schema), contentType
 				}
 			}
 		}
 	}
 
 	// No body response
-	return ""
+	return "", ""
 }
 
 // getRequestBodyType determines the request body type
-func (g *Generator) getRequestBodyType(body *core.RequestBody) string {
+func (g *Generator) getRequestBodyType(body *core.RequestBody) (string, string) {
 	if body == nil {
-		return ""
+		return "", ""
 	}
 
-	// Look for JSON content
-	if mediaType, ok := body.Content["application/json"]; ok {
+	for contentType, mediaType := range body.Content {
 		if mediaType.Schema != nil {
 			if mediaType.Schema.RefType != "" {
-				return "*models." + mediaType.Schema.RefType // TODO: parameterize the package name
+				return "*models." + mediaType.Schema.RefType, contentType // TODO: parameterize the package name
 			}
-			return g.mapParameterType(mediaType.Schema)
+			return g.mapParameterType(mediaType.Schema), contentType
 		}
 	}
-	return ""
+	return "", ""
 }
 
 // extractParamsByLocation filters parameters by location

@@ -94,11 +94,22 @@ func (c *HTTPClient) {{ .Name }}(ctx context.Context{{- range .PathParams }}, {{
     // Create request body
     var reqBody io.Reader
     {{- if .HasBody }}
+	{{- if .IsXMLBody }}
+    bodyBytes, err := xml.Marshal(body)
+    if err != nil {
+        return {{ if .ReturnType }}nil, {{ end }}fmt.Errorf("failed to marshal request body: %w", err)
+    }
+    reqBody = bytes.NewReader(bodyBytes)
+	{{- else if .IsFormBody }}
+	// Basic support for form encoding
+	reqBody = strings.NewReader(fmt.Sprintf("%v", body))
+	{{- else }}
     bodyBytes, err := json.Marshal(body)
     if err != nil {
         return {{ if .ReturnType }}nil, {{ end }}fmt.Errorf("failed to marshal request body: %w", err)
     }
     reqBody = bytes.NewReader(bodyBytes)
+	{{- end }}
     {{- end }}
 
     // Create HTTP request
@@ -109,9 +120,13 @@ func (c *HTTPClient) {{ .Name }}(ctx context.Context{{- range .PathParams }}, {{
 
     // Add headers
     {{- if .HasBody }}
-    req.Header.Set("Content-Type", "application/json")
+    req.Header.Set("Content-Type", "{{ .ContentType }}")
     {{- end }}
-    req.Header.Set("Accept", "application/json")
+	{{- if .AcceptType }}
+    req.Header.Set("Accept", "{{ .AcceptType }}")
+	{{- else }}
+	req.Header.Set("Accept", "application/json")
+	{{- end }}
     for key, value := range c.headers {
         req.Header.Set(key, value)
     }
@@ -132,9 +147,15 @@ func (c *HTTPClient) {{ .Name }}(ctx context.Context{{- range .PathParams }}, {{
     {{- if .ReturnType }}
     // Parse response
     var result {{ .ReturnType }}
-    if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-        return nil, fmt.Errorf("failed to decode response: %w", err)
+	{{- if .IsXMLResponse }}
+    if err := xml.NewDecoder(resp.Body).Decode(&result); err != nil {
+        return nil, fmt.Errorf("failed to decode XML response: %w", err)
     }
+	{{- else }}
+    if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+        return nil, fmt.Errorf("failed to decode JSON response: %w", err)
+    }
+	{{- end }}
 
     return result, nil
     {{- else }}

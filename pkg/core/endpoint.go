@@ -33,8 +33,14 @@ type RequestBody struct {
 }
 
 type MediaType struct {
-	Schema  *Property
-	Example interface{}
+	Schema   *Property
+	Example  interface{}
+	Encoding map[string]Encoding // Mapping for multipart/form-data properties
+}
+
+type Encoding struct {
+	ContentType string // e.g., "application/json" or "image/png"
+	// Future: headers, style, explode
 }
 
 type Response struct {

@@ -123,9 +123,19 @@ func (n *Normalizer) extractResponses(responses *openapi3.Responses) []core.Resp
 				continue
 			}
 
+			encodings := make(map[string]core.Encoding)
+			for encName, encRef := range mediaType.Encoding {
+				if encRef != nil {
+					encodings[encName] = core.Encoding{
+						ContentType: encRef.ContentType,
+					}
+				}
+			}
+
 			content[contentType] = core.MediaType{
-				Schema:  n.extractParameterSchema(mediaType.Schema),
-				Example: mediaType.Example,
+				Schema:   n.extractParameterSchema(mediaType.Schema),
+				Example:  mediaType.Example,
+				Encoding: encodings,
 			}
 		}
 
@@ -167,9 +177,19 @@ func (n *Normalizer) extractRequestBody(bodyRef *openapi3.RequestBodyRef) *core.
 			continue
 		}
 
+		encodings := make(map[string]core.Encoding)
+		for encName, encRef := range mediaType.Encoding {
+			if encRef != nil {
+				encodings[encName] = core.Encoding{
+					ContentType: encRef.ContentType,
+				}
+			}
+		}
+
 		content[contentType] = core.MediaType{
-			Schema:  n.extractParameterSchema(mediaType.Schema),
-			Example: mediaType.Example,
+			Schema:   n.extractParameterSchema(mediaType.Schema),
+			Example:  mediaType.Example,
+			Encoding: encodings,
 		}
 	}
 
