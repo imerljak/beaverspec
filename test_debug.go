@@ -11,48 +11,28 @@ import (
 
 func main() {
 	gen := golang.NewGenerator()
-
-	ep := core.Endpoint{
-		OperationID: "auth",
-		Path:        "/auth",
-		Method:      "POST",
-		Responses: []core.Response{
+	minLen := 3
+	spec := &core.Spec{
+		Models: []core.Model{
 			{
-				StatusCode: "200",
-				Content: map[string]core.MediaType{
-					"application/json": {Schema: &core.Property{RefType: "Session"}},
-				},
-			},
-			{
-				StatusCode: "401",
-				Content: map[string]core.MediaType{
-					"application/json": {Schema: &core.Property{RefType: "AuthError"}},
+				Name: "User",
+				Properties: []core.Property{
+					{Name: "name", Type: "string", Required: true, MinLength: &minLen},
 				},
 			},
 		},
 	}
-	spec := &core.Spec{
-		Endpoints: []core.Endpoint{ep},
-	}
-
-	result, err := gen.Generate(spec, &core.Config{
-		OutputDir: "generated",
-	})
+	result, err := gen.Generate(spec, &core.Config{OutputDir: "generated"})
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
+		fmt.Println("err:", err)
 		os.Exit(1)
 	}
-
 	for _, f := range result.Files {
-		if f.Path == "client/client.go" {
-			lines := strings.Split(string(f.Content), "\n")
-			for i, line := range lines {
-				if strings.Contains(line, "switch resp.StatusCode") {
-					for j := 0; j < 20 && i+j < len(lines); j++ {
-						fmt.Println(lines[i+j])
-					}
-					break
-				}
+		if f.Path == "models/models.go" {
+			content := string(f.Content)
+			lines := strings.Split(content, "\n")
+			for i, l := range lines {
+				fmt.Printf("%d: %s\n", i+1, l)
 			}
 		}
 	}

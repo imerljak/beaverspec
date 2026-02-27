@@ -695,19 +695,35 @@ func capitalizeFirst(s string) string {
 	return strings.ToUpper(s[:1]) + s[1:]
 }
 
-// extractRefTypeName extracts the type name from a $ref path
-// Example "#/components/schemas/User" -> "User"
+// extractRefTypeName extracts the type name from a $ref path.
+// Handles both local refs ("#/components/schemas/User" -> "User")
+// and external file refs ("./models/Pick.yaml" -> "Pick",
+// "../../shared/models.yaml#/components/schemas/User" -> "User").
 func extractRefTypeName(ref string) string {
 	if ref == "" {
 		return ""
 	}
 
-	i := strings.LastIndex(ref, "/")
-	if i == -1 {
-		return ref
+	// If there's a fragment (#), use the fragment part only.
+	// e.g. "../../shared/models.yaml#/components/schemas/Pick" -> "/components/schemas/Pick"
+	if i := strings.Index(ref, "#"); i != -1 {
+		ref = ref[i+1:]
 	}
 
-	return ref[i+1:]
+	// Get last path segment
+	if i := strings.LastIndex(ref, "/"); i != -1 {
+		ref = ref[i+1:]
+	}
+
+	// Strip file extension for external file refs (e.g. "pick.yaml" -> "pick")
+	if i := strings.LastIndex(ref, "."); i != -1 {
+		ext := strings.ToLower(ref[i:])
+		if ext == ".yaml" || ext == ".yml" || ext == ".json" {
+			ref = ref[:i]
+		}
+	}
+
+	return ref
 }
 
 // generateNestedTypeName generates a type name for nested objects

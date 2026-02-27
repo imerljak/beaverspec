@@ -25,6 +25,7 @@ type ModelData struct {
 	ArrayType     string   // the type for array items
 	IsMap         bool     // true for map type schemas
 	MapValueType  string   // the type for map values
+	HasValidation bool     // true if any property has a validation constraint
 
 	// Union types (oneOf/anyOf)
 	IsOneOf       bool
@@ -46,6 +47,19 @@ type PropertyData struct {
 	ReadOnly   bool
 	WriteOnly  bool
 	Deprecated bool
+
+	// Validation constraints
+	Required          bool
+	Format            string
+	MinLength         *int
+	MaxLength         *int
+	Minimum           *float64
+	Maximum           *float64
+	Pattern           string
+	EnumValues        []string
+	HasEnum           bool
+	HasValidation     bool // true if any constraint is present
+	IsFormatValidated bool // true if format requires a format check
 }
 
 type EnumData struct {
@@ -691,15 +705,25 @@ func (g *Generator) convertModel(m core.Model) ModelData {
 		}
 	}
 
+	props := g.convertProperties(m.Properties, m.Name)
+	hasValidation := false
+	for _, p := range props {
+		if p.HasValidation {
+			hasValidation = true
+			break
+		}
+	}
+
 	return ModelData{
 		Name:          m.Name,
 		Description:   m.Description,
-		Properties:    g.convertProperties(m.Properties, m.Name),
+		Properties:    props,
 		EmbeddedTypes: embeddedTypes,
 		IsArray:       m.IsArray,
 		ArrayType:     g.getArrayItemsType(m.Items),
 		IsMap:         m.IsMap,
 		MapValueType:  g.getArrayItemsType(m.AdditionalProps),
+		HasValidation: hasValidation,
 
 		IsOneOf:       m.IsOneOf,
 		IsAnyOf:       m.IsAnyOf,
@@ -723,16 +747,40 @@ func (g *Generator) getArrayItemsType(items *core.Property) string {
 func (g *Generator) convertProperties(props []core.Property, modelName string) []PropertyData {
 	var result []PropertyData
 	for _, p := range props {
+		// Build enum value strings
+		enumVals := make([]string, 0, len(p.Enum))
+		for _, e := range p.Enum {
+			enumVals = append(enumVals, fmt.Sprintf("%v", e))
+		}
+		isFormatValidated := codegen.IsFormatValidated(p.Format)
+		hasValidation := codegen.HasConstraints(
+			p.MinLength != nil, p.MaxLength != nil,
+			p.Minimum != nil, p.Maximum != nil,
+			p.Pattern != "", len(p.Enum) > 0, p.Required,
+		) || isFormatValidated
+
 		result = append(result, PropertyData{
 			Name:        p.Name,
-			Type:        g.mapType(p, modelName), // Map OpenAPI to Go types
+			Type:        g.mapType(p, modelName),
 			Description: p.Description,
-			JsonTag:     p.Name, // TODO: apply naming convention
+			JsonTag:     p.Name,
 
 			Default:    g.formatDefault(p.Default),
 			ReadOnly:   p.ReadOnly,
 			WriteOnly:  p.WriteOnly,
 			Deprecated: p.Deprecated,
+
+			Required:          p.Required,
+			Format:            p.Format,
+			MinLength:         p.MinLength,
+			MaxLength:         p.MaxLength,
+			Minimum:           p.Minimum,
+			Maximum:           p.Maximum,
+			Pattern:           p.Pattern,
+			EnumValues:        enumVals,
+			HasEnum:           len(p.Enum) > 0,
+			HasValidation:     hasValidation,
+			IsFormatValidated: isFormatValidated,
 		})
 	}
 	return result
@@ -835,13 +883,26 @@ func (g *Generator) collectImports(models []ModelData) []string {
 			importsNeeded["encoding/json"] = true
 		}
 
+		if model.HasValidation {
+			importsNeeded["fmt"] = true
+		}
+
 		for _, prop := range model.Properties {
 			// Check if the type uses time.Time
 			if strings.Contains(prop.Type, "time.Time") {
 				importsNeeded["time"] = true
 			}
-			// Future: add other import detection here
-			// e.g., "encoding/json" for custom marshalers
+			if prop.IsFormatValidated {
+				switch prop.Format {
+				case "date-time", "date":
+					importsNeeded["time"] = true
+				case "email", "uuid", "uri", "url":
+					importsNeeded["regexp"] = true
+				}
+			}
+			if prop.Pattern != "" {
+				importsNeeded["regexp"] = true
+			}
 		}
 	}
 

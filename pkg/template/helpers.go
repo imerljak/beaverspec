@@ -16,6 +16,37 @@ func DefaultHelpers() template.FuncMap {
 		"toLower":      strings.ToLower,
 		"toUpper":      strings.ToUpper,
 		"capitalize":   Capitalize,
+		"deref": func(p *int) int {
+			if p != nil {
+				return *p
+			}
+			return 0
+		},
+		"derefF": func(p *float64) float64 {
+			if p != nil {
+				return *p
+			}
+			return 0
+		},
+		"zeroCheck": ZeroCheck,
+	}
+}
+
+// ZeroCheck returns the Go zero-value comparison snippet for the given type.
+// Used to generate required-field validation in Validate() methods.
+func ZeroCheck(goType string) string {
+	switch goType {
+	case "string":
+		return `== ""`
+	case "int", "int8", "int16", "int32", "int64",
+		"uint", "uint8", "uint16", "uint32", "uint64",
+		"float32", "float64":
+		return "== 0"
+	case "bool":
+		return "== false"
+	default:
+		// Pointer types, interfaces, slices, maps
+		return "== nil"
 	}
 }
 

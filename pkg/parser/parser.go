@@ -22,6 +22,7 @@ func NewParser() *Parser {
 // Returns the raw openapi3 document
 func (p *Parser) LoadSpec(ctx context.Context, specPath string) (*openapi3.T, error) {
 	loader := openapi3.NewLoader()
+	loader.IsExternalRefsAllowed = true
 	t, err := loader.LoadFromFile(specPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load spec from %s: %w", specPath, err)

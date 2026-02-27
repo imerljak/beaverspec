@@ -91,11 +91,67 @@ type {{ .Name }} struct {
 {{- end }}
 
 }
+
+{{- if .HasValidation }}
+// Validate returns an error if any field violates its constraints.
+func (m *{{ .Name }}) Validate() error {
+{{- range .Properties }}
+{{- if .HasValidation }}
+    // {{ .Name | toPascalCase }}
+{{- if .Required }}
+    if m.{{ .Name | toPascalCase }} {{ zeroCheck .Type }} {
+        return fmt.Errorf("{{ .Name }}: required field is missing")
+    }
+{{- end }}
+{{- if .MinLength }}
+    if len(m.{{ .Name | toPascalCase }}) < {{ deref .MinLength }} {
+        return fmt.Errorf("{{ .Name }}: length must be at least {{ deref .MinLength }}")
+    }
+{{- end }}
+{{- if .MaxLength }}
+    if len(m.{{ .Name | toPascalCase }}) > {{ deref .MaxLength }} {
+        return fmt.Errorf("{{ .Name }}: length must be at most {{ deref .MaxLength }}")
+    }
+{{- end }}
+{{- if .Minimum }}
+    if float64(m.{{ .Name | toPascalCase }}) < {{ derefF .Minimum }} {
+        return fmt.Errorf("{{ .Name }}: value must be >= {{ derefF .Minimum }}")
+    }
+{{- end }}
+{{- if .Maximum }}
+    if float64(m.{{ .Name | toPascalCase }}) > {{ derefF .Maximum }} {
+        return fmt.Errorf("{{ .Name }}: value must be <= {{ derefF .Maximum }}")
+    }
+{{- end }}
+{{- if .Pattern }}
+    if matched, _ := regexp.MatchString(`{{ .Pattern }}`, m.{{ .Name | toPascalCase }}); !matched {
+        return fmt.Errorf("{{ .Name }}: value does not match required pattern")
+    }
+{{- end }}
+{{- if .HasEnum }}
+    switch m.{{ .Name | toPascalCase }} {
+    case {{ range $i, $v := .EnumValues }}{{ if $i }}, {{ end }}"{{ $v }}"{{ end }}:
+        // valid
+    default:
+        return fmt.Errorf("{{ .Name }}: value %v is not a valid enum value", m.{{ .Name | toPascalCase }})
+    }
+{{- end }}
+{{- end }}
+{{- end }}
+    return nil
+}
+{{- end }}
+
 {{- end }}
 {{ end }}
 
+// Validator is an interface implemented by models that have validation rules.
+type Validator interface {
+    Validate() error
+}
+
 // APIError is a standard interface for generated API Error structs mapping to status codes
 type APIError interface {
-	error
-	StatusCode() int
+    error
+    StatusCode() int
 }

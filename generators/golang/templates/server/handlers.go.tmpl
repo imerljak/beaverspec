@@ -34,6 +34,13 @@ func (s *{{ $handler.Name }}Server) {{ .Name }}(w http.ResponseWriter, r *http.R
 	{{ else }}
 	// Form encoded or multipart support (M2.6)
 	{{ end }}
+	// Validate request body constraints
+	if v, ok := any(&req).(models.Validator); ok {
+		if err := v.Validate(); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
 	{{ end }}
     {{ range .PathParams }}var p_{{ .Name }} {{ .Type }}{{ end }}
     {{ range .QueryParams }}var q_{{ .Name }} {{ .Type }}{{ end }}
