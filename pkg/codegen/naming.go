@@ -1,7 +1,8 @@
 package codegen
 
 import (
-	"log"
+	"log/slog"
+	"os"
 	"regexp"
 	"strings"
 )
@@ -96,6 +97,9 @@ var pluralIrregulars = map[string]string{
 	"mouse":  "mice",
 	"index":  "indices", // or "indexes"
 	"schema": "schemas", // technical term, keep simple
+	"hero":   "heroes",
+	"potato": "potatoes",
+	"tomato": "tomatoes",
 }
 
 // Pluralize converts a string to its plural form
@@ -121,7 +125,7 @@ func Pluralize(singular string) string {
 	}
 
 	if oesPattern.MatchString(singular) {
-		return singular + "s" // TODO: enhance to handle exceptions
+		return singular + "es" // enhanced to handle consonant+o
 	}
 
 	return singular + "s"
@@ -137,6 +141,12 @@ var singularIrregulars = map[string]string{
 	"geese":    "goose",
 	"mice":     "mouse",
 	"indices":  "index",
+	"heroes":   "hero",
+	"potatoes": "potato",
+	"tomatoes": "tomato",
+	"wives":    "wife",
+	"lives":    "life",
+	"knives":   "knife",
 }
 
 var esSingularPattern = compileRegex(`(i?)(ses|shes|ches|xes|zes)$`)
@@ -170,7 +180,8 @@ func Singularize(plural string) string {
 func compileRegex(pattern string) *regexp.Regexp {
 	re, err := regexp.Compile(pattern)
 	if err != nil {
-		log.Fatalf("invalid regex %s: %v", pattern, err)
+		slog.Error("invalid regex", "pattern", pattern, "error", err)
+		os.Exit(1)
 	}
 	return re
 }

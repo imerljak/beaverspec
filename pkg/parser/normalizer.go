@@ -2,6 +2,7 @@ package parser
 
 import (
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 
@@ -303,7 +304,7 @@ func (n *Normalizer) extractModels(schemas openapi3.Schemas) []core.Model {
 			// handle oneOf - require discriminator
 			if schema.Discriminator == nil {
 				// TODO: Add to validation errors instead of skipping
-				fmt.Printf("Warning: oneOf schema '%s'is missing required discriminator, skipping\n", name)
+				slog.Warn("oneOf schema is missing required discriminator, skipping", "schema", name)
 				continue
 			}
 

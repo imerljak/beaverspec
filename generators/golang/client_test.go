@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/imerljak/beaverspec/pkg/codegen"
 	"github.com/imerljak/beaverspec/pkg/parser"
 )
 
@@ -24,7 +25,7 @@ func TestConvertEndpointsToClient(t *testing.T) {
 
 	// Create generator and convert endpoints
 	gen := NewGenerator()
-	clientData := gen.convertEndpointsToClient(spec.Endpoints)
+	clientData := gen.convertEndpointsToClient(spec.Endpoints, "github.com/example/project", "generated")
 
 	// Verify basic structure
 	if clientData.InterfaceName != "Client" {
@@ -54,8 +55,8 @@ func TestConvertEndpointsToClient(t *testing.T) {
 	if len(listPets.QueryParams) != 1 {
 		t.Errorf("Expected ListPets to have 1 query param, got %d", len(listPets.QueryParams))
 	}
-	if listPets.ReturnType != "*Pets" {
-		t.Errorf("Expected ListPets return type *Pets, got %s", listPets.ReturnType)
+	if listPets.ReturnType != "*models.Pets" {
+		t.Errorf("Expected ListPets return type *models.Pets, got %s", listPets.ReturnType)
 	}
 
 	// Verify CreatePets operation
@@ -69,8 +70,8 @@ func TestConvertEndpointsToClient(t *testing.T) {
 	if !createPets.HasBody {
 		t.Error("Expected CreatePets to have body")
 	}
-	if createPets.BodyType != "*Pet" {
-		t.Errorf("Expected CreatePets body type *Pet, got %s", createPets.BodyType)
+	if createPets.BodyType != "*models.Pet" {
+		t.Errorf("Expected CreatePets body type *models.Pet, got %s", createPets.BodyType)
 	}
 
 	// Verify ShowPetById operation
@@ -81,8 +82,8 @@ func TestConvertEndpointsToClient(t *testing.T) {
 	if len(showPet.PathParams) != 1 {
 		t.Errorf("Expected ShowPetById to have 1 path param, got %d", len(showPet.PathParams))
 	}
-	if showPet.ReturnType != "*Pet" {
-		t.Errorf("Expected ShowPetById return type *Pet, got %s", showPet.ReturnType)
+	if showPet.ReturnType != "*models.Pet" {
+		t.Errorf("Expected ShowPetById return type *models.Pet, got %s", showPet.ReturnType)
 	}
 
 	// Verify imports
@@ -108,9 +109,9 @@ func findOperation(ops []OperationData, name string) *OperationData {
 	return nil
 }
 
-func containsImport(imports []string, target string) bool {
+func containsImport(imports []codegen.Import, target string) bool {
 	for _, imp := range imports {
-		if imp == target {
+		if imp.Path == target {
 			return true
 		}
 	}
