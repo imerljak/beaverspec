@@ -303,6 +303,17 @@ func (g *Generator) Generate(spec *core.Spec, config *core.Config) (*core.Genera
 		}
 		files = append(files, core.GeneratedFile{Path: "server/interface.go", Content: formattedInterface})
 
+		// mocks (shared, framework-agnostic)
+		serverMocksContent, err := engine.Render("server/mocks.go.tmpl", serverData)
+		if err != nil {
+			return nil, fmt.Errorf("failed to render server mocks: %w", err)
+		}
+		formattedMocks, err := format.Source([]byte(serverMocksContent))
+		if err != nil {
+			return nil, fmt.Errorf("failed to format server/mocks.go: %w\ncontent:\n%s", err, serverMocksContent)
+		}
+		files = append(files, core.GeneratedFile{Path: "server/mocks.go", Content: formattedMocks})
+
 		// handlers and routes are framework-specific (template layer)
 		serverHandlersContent, err := engine.Render("server/"+framework+"/handlers.go.tmpl", serverData)
 		if err != nil {
@@ -866,14 +877,7 @@ func (g *Generator) mapType(prop core.Property, modelName string) string {
 	var baseType string
 	switch prop.Type {
 	case "array":
-		{
-			if prop.Items != nil && prop.Items.Type != "" {
-				itemType := g.mapPrimitiveType(prop.Items.Type, prop.Items.Format)
-				baseType = "[]" + itemType
-			} else {
-				baseType = "[]interface{}" // Fallback for untyped arrays
-			}
-		}
+		baseType = "[]" + g.getArrayItemsType(prop.Items)
 	case "object":
 		{
 			// For now, use map[string]interface{} for nested objects
@@ -940,13 +944,8 @@ func (g *Generator) collectImports(models []ModelData) []string {
 			if strings.Contains(prop.Type, "time.Time") {
 				importsNeeded["time"] = true
 			}
-			if prop.IsFormatValidated {
-				switch prop.Format {
-				case "date-time", "date":
-					importsNeeded["time"] = true
-				case "email", "uuid", "uri", "url":
-					importsNeeded["regexp"] = true
-				}
+			if prop.IsFormatValidated && (prop.Format == "date-time" || prop.Format == "date") {
+				importsNeeded["time"] = true
 			}
 			if prop.Pattern != "" {
 				importsNeeded["regexp"] = true

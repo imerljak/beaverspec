@@ -648,9 +648,14 @@ func (n *Normalizer) extractPropertiesWithNested(props openapi3.Schemas, require
 		}
 
 		var itemsType string
-		if propType == "array" && prop.Items != nil && prop.Items.Value != nil {
-			if prop.Items.Value.Type != nil && len(*prop.Items.Value.Type) > 0 {
-				itemsType = (*prop.Items.Value.Type)[0]
+		var itemsRefType string
+		if propType == "array" && prop.Items != nil {
+			if prop.Items.Ref != "" {
+				itemsRefType = extractRefTypeName(prop.Items.Ref)
+			} else if prop.Items.Value != nil {
+				if prop.Items.Value.Type != nil && len(*prop.Items.Value.Type) > 0 {
+					itemsType = (*prop.Items.Value.Type)[0]
+				}
 			}
 		}
 
@@ -691,7 +696,8 @@ func (n *Normalizer) extractPropertiesWithNested(props openapi3.Schemas, require
 			Nullable:    prop.Nullable,
 			Enum:        inlineEnum,
 			Items: &core.Property{
-				Type: itemsType,
+				Type:    itemsType,
+				RefType: itemsRefType,
 			},
 			RefType: refType,
 

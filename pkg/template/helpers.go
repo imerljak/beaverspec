@@ -32,6 +32,7 @@ func DefaultHelpers() template.FuncMap {
 		},
 		"zeroCheck":      ZeroCheck,
 		"toColonParams":  ToColonParams,
+		"zeroValue":      ZeroValue,
 	}
 }
 
@@ -133,6 +134,25 @@ func ToKebabCase(s string) string {
 // Example: "/users/{id}/posts/{postId}" -> "/users/:id/posts/:postId"
 func ToColonParams(path string) string {
 	return colonParamsRe.ReplaceAllString(path, ":$1")
+}
+
+// ZeroValue returns the Go zero-value literal for a given Go type string.
+// Used in mock templates to return the correct zero value for any return type.
+func ZeroValue(goType string) string {
+	if strings.HasPrefix(goType, "*") ||
+		strings.HasPrefix(goType, "[]") ||
+		strings.HasPrefix(goType, "map[") ||
+		goType == "interface{}" {
+		return "nil"
+	}
+	switch goType {
+	case "string":
+		return `""`
+	case "bool":
+		return "false"
+	default: // int, int8, int16, int32, int64, float32, float64, etc.
+		return "0"
+	}
 }
 
 // Capitalize capitalizes the first letter of a string
