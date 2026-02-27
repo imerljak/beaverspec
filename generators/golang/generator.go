@@ -94,6 +94,7 @@ type ClientData struct {
 type ServerData struct {
 	PackageName     string
 	Imports         []codegen.Import
+	ModelsPackage   string // fully-qualified models package path (e.g. "github.com/example/project/models")
 	Handlers        []HandlerGroup
 	SecuritySchemes []SecuritySchemeData
 }
@@ -200,12 +201,16 @@ func (g *Generator) Generate(spec *core.Spec, config *core.Config) (*core.Genera
 
 	packageName := "models"
 	modulePath := "github.com/example/project" // default
+	framework := "net-http"                    // default server framework
 	if config.Options != nil {
 		if pkgName, ok := config.Options["package"].(string); ok && pkgName != "" {
 			packageName = pkgName
 		}
 		if mp, ok := config.Options["modulePath"].(string); ok && mp != "" {
 			modulePath = mp
+		}
+		if fw, ok := config.Options["framework"].(string); ok && fw != "" {
+			framework = fw
 		}
 	}
 	baseDir := config.OutputDir // e.g., "generated"
@@ -292,12 +297,13 @@ func (g *Generator) Generate(spec *core.Spec, config *core.Config) (*core.Genera
 			return nil, fmt.Errorf("failed to render server interface: %w", err)
 		}
 		formattedInterface, err := format.Source([]byte(serverInterfaceContent))
-		if err == nil {
-			files = append(files, core.GeneratedFile{Path: "server/interface.go", Content: formattedInterface})
+		if err != nil {
+			return nil, fmt.Errorf("failed to format server/interface.go: %w\ncontent:\n%s", err, serverInterfaceContent)
 		}
+		files = append(files, core.GeneratedFile{Path: "server/interface.go", Content: formattedInterface})
 
-		// handlers
-		serverHandlersContent, err := engine.Render("server/handlers.go.tmpl", serverData)
+		// handlers and routes are framework-specific (template layer)
+		serverHandlersContent, err := engine.Render("server/"+framework+"/handlers.go.tmpl", serverData)
 		if err != nil {
 			return nil, fmt.Errorf("failed to render server handlers: %w", err)
 		}
@@ -306,8 +312,7 @@ func (g *Generator) Generate(spec *core.Spec, config *core.Config) (*core.Genera
 			files = append(files, core.GeneratedFile{Path: "server/handlers.go", Content: formattedHandlers})
 		}
 
-		// routes
-		serverRoutesContent, err := engine.Render("server/routes.go.tmpl", serverData)
+		serverRoutesContent, err := engine.Render("server/"+framework+"/routes.go.tmpl", serverData)
 		if err != nil {
 			return nil, fmt.Errorf("failed to render server routes: %w", err)
 		}
@@ -436,6 +441,7 @@ func (g *Generator) convertEndpointsToServer(endpoints []core.Endpoint, security
 	return ServerData{
 		PackageName:     "server",
 		Imports:         imports.GetImports(),
+		ModelsPackage:   modulePath + "/models",
 		Handlers:        handlers,
 		SecuritySchemes: g.convertSecuritySchemes(securityDef),
 	}
@@ -608,9 +614,9 @@ func (g *Generator) mapParameterType(schema *core.Property) string {
 		return "string"
 	}
 
-	// Handle references
+	// Handle references — qualify with models package
 	if schema.RefType != "" {
-		return schema.RefType
+		return "models." + schema.RefType
 	}
 
 	// Handle arrays

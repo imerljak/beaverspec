@@ -6,6 +6,11 @@ import (
 {{- range .Imports }}
 	{{ if .Alias }}{{ .Alias }} "{{ .Path }}"{{ else }}"{{ .Path }}"{{ end }}
 {{- end }}
+	"github.com/go-chi/chi/v5"
+)
+{{- else }}
+import (
+	"github.com/go-chi/chi/v5"
 )
 {{- end }}
 
@@ -18,7 +23,6 @@ type {{ $handler.Name }}Server struct {
 {{- range .Operations }}
 // {{ .Name }} HTTP Handler
 func (s *{{ $handler.Name }}Server) {{ .Name }}(w http.ResponseWriter, r *http.Request) {
-    // TODO: Parameter extraction (M2.6)
     {{ if .HasBody }}
 	var req {{ .BodyType }}
 	{{ if .IsXMLBody }}
@@ -32,7 +36,7 @@ func (s *{{ $handler.Name }}Server) {{ .Name }}(w http.ResponseWriter, r *http.R
         return
     }
 	{{ else }}
-	// Form encoded or multipart support (M2.6)
+	// Form encoded or multipart support
 	{{ end }}
 	// Validate request body constraints
 	if v, ok := any(&req).(models.Validator); ok {
@@ -42,11 +46,13 @@ func (s *{{ $handler.Name }}Server) {{ .Name }}(w http.ResponseWriter, r *http.R
 		}
 	}
 	{{ end }}
-    {{ range .PathParams }}var p_{{ .Name }} {{ .Type }}{{ end }}
-    {{ range .QueryParams }}var q_{{ .Name }} {{ .Type }}{{ end }}
+    {{ range .PathParams }}{{ .Name | toCamelCase }} := chi.URLParam(r, "{{ .Name }}")
+    {{ end }}
+    {{ range .QueryParams }}{{ .Name | toCamelCase }} := r.URL.Query().Get("{{ .Name }}")
+    {{ end }}
 
     // Execute handler
-    {{ if .ReturnType }}resp, {{ end }}err := s.Handler.{{ .Name }}(r.Context(){{ if .HasBody }}, req{{ end }}{{ range .PathParams }}, p_{{ .Name }}{{ end }}{{ range .QueryParams }}, q_{{ .Name }}{{ end }})
+    {{ if .ReturnType }}resp, {{ end }}err := s.Handler.{{ .Name }}(r.Context(){{ if .HasBody }}, req{{ end }}{{ range .PathParams }}, {{ .Name | toCamelCase }}{{ end }}{{ range .QueryParams }}, {{ .Name | toCamelCase }}{{ end }})
     if err != nil {
 		var apiErr models.APIError
 		if errors.As(err, &apiErr) {

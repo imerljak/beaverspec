@@ -23,6 +23,7 @@ func main() {
 	generatorFlag := flag.String("generator", "go", "which generator to use, default 'go'")
 	packageNameFlag := flag.String("package", "models", "package name for generated code")
 	modulePathFlag := flag.String("module", "github.com/example/project", "base module path for the generated code")
+	frameworkFlag := flag.String("framework", "net-http", "server framework: net-http, chi, echo, gin")
 	versionFlag := flag.Bool("version", false, "print version and exit")
 	debugFlag := flag.Bool("debug", false, "enable debug logging")
 	flag.Parse()
@@ -81,6 +82,7 @@ func main() {
 		Options: map[string]interface{}{
 			"package":    *packageNameFlag,
 			"modulePath": *modulePathFlag,
+			"framework":  *frameworkFlag,
 		},
 	})
 	if err != nil {

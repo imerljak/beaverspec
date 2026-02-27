@@ -6,6 +6,8 @@ import (
 	"text/template"
 )
 
+var colonParamsRe = regexp.MustCompile(`\{([^}]+)\}`)
+
 // DefaultHelpers returns a map of default template helper functions
 func DefaultHelpers() template.FuncMap {
 	return template.FuncMap{
@@ -28,7 +30,8 @@ func DefaultHelpers() template.FuncMap {
 			}
 			return 0
 		},
-		"zeroCheck": ZeroCheck,
+		"zeroCheck":      ZeroCheck,
+		"toColonParams":  ToColonParams,
 	}
 }
 
@@ -124,6 +127,12 @@ func ToKebabCase(s string) string {
 	})
 
 	return strings.TrimPrefix(strings.ToLower(string(replaced)), "-")
+}
+
+// ToColonParams converts OpenAPI {param} path syntax to :param syntax used by Echo and Gin.
+// Example: "/users/{id}/posts/{postId}" -> "/users/:id/posts/:postId"
+func ToColonParams(path string) string {
+	return colonParamsRe.ReplaceAllString(path, ":$1")
 }
 
 // Capitalize capitalizes the first letter of a string

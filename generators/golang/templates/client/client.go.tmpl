@@ -120,6 +120,16 @@ func (c *HTTPClient) {{ .Name }}(ctx context.Context{{- range .PathParams }}, {{
     }
     {{- end }}
 
+    // Validate request body before sending
+    {{- if .HasBody }}
+    type validator interface{ Validate() error }
+    if v, ok := any(body).(validator); ok {
+        if err := v.Validate(); err != nil {
+            return {{ if .ReturnType }}nil, {{ end }}fmt.Errorf("validation: %w", err)
+        }
+    }
+    {{- end }}
+
     // Create request body
     var reqBody io.Reader
     {{- if .HasBody }}
