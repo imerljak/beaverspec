@@ -20,11 +20,22 @@ func NewNormalizer() *Normalizer {
 
 func (n *Normalizer) Normalize(doc *openapi3.T) (*core.Spec, error) {
 
-	var models []core.Model
+	// Start with schemas from components (named schemas section)
+	allSchemas := openapi3.Schemas{}
 	if doc.Components != nil && doc.Components.Schemas != nil {
-		models = n.extractModels(doc.Components.Schemas)
+		for k, v := range doc.Components.Schemas {
+			allSchemas[k] = v
+		}
+	}
+	// Also collect schemas that are only referenced from path operations
+	// (e.g. specs that use external file $refs without a components/schemas section)
+	n.collectReferencedSchemas(doc.Paths, allSchemas)
+
+	var models []core.Model
+	if len(allSchemas) > 0 {
+		models = n.extractModels(allSchemas)
 	} else {
-		models = []core.Model{} // Empty slice if no components
+		models = []core.Model{}
 	}
 
 	var securityDef []core.SecurityScheme
@@ -418,6 +429,15 @@ func (n *Normalizer) extractModels(schemas openapi3.Schemas) []core.Model {
 			}
 
 			models = append(models, model)
+		} else if len(schema.Enum) > 0 && (schemaType == "string" || schemaType == "integer" || schemaType == "number") {
+			// handle scalar enum schemas (e.g. type: string with enum values)
+			model := core.Model{
+				Name:        name,
+				Description: schema.Description,
+				Type:        schemaType,
+				Enum:        schema.Enum,
+			}
+			models = append(models, model)
 		} else if schemaType == "array" {
 			// handle array type schema
 			model := core.Model{
@@ -655,6 +675,13 @@ func (n *Normalizer) extractPropertiesWithNested(props openapi3.Schemas, require
 			nestedModels = append(nestedModels, deeplyNested...)
 		}
 
+		// Only copy inline enum values; when the property is a $ref the enum
+		// belongs to the referenced type and should not be duplicated here.
+		var inlineEnum []interface{}
+		if propRef.Ref == "" {
+			inlineEnum = prop.Enum
+		}
+
 		property := core.Property{
 			Name:        name,
 			Type:        propType,
@@ -662,7 +689,7 @@ func (n *Normalizer) extractPropertiesWithNested(props openapi3.Schemas, require
 			Description: prop.Description,
 			Required:    requiredMap[name],
 			Nullable:    prop.Nullable,
-			Enum:        prop.Enum,
+			Enum:        inlineEnum,
 			Items: &core.Property{
 				Type: itemsType,
 			},
@@ -729,4 +756,95 @@ func extractRefTypeName(ref string) string {
 // generateNestedTypeName generates a type name for nested objects
 func generateNestedTypeName(parentModel, propName string) string {
 	return parentModel + capitalizeFirst(propName)
+}
+
+// collectReferencedSchemas walks all path operations and collects any schema
+// refs (external file refs or inline $refs) that are not already present in
+// the schemas map. This supports specs that don't use components/schemas.
+func (n *Normalizer) collectReferencedSchemas(paths *openapi3.Paths, schemas openapi3.Schemas) {
+	if paths == nil {
+		return
+	}
+	for _, pathItem := range paths.Map() {
+		if pathItem == nil {
+			continue
+		}
+		ops := []*openapi3.Operation{
+			pathItem.Get, pathItem.Post, pathItem.Put, pathItem.Delete,
+			pathItem.Patch, pathItem.Head, pathItem.Options,
+		}
+		for _, op := range ops {
+			if op == nil {
+				continue
+			}
+			if op.RequestBody != nil && op.RequestBody.Value != nil {
+				for _, mt := range op.RequestBody.Value.Content {
+					if mt != nil {
+						n.walkSchemaRef(mt.Schema, schemas)
+					}
+				}
+			}
+			if op.Responses != nil {
+				for _, respRef := range op.Responses.Map() {
+					if respRef == nil || respRef.Value == nil {
+						continue
+					}
+					for _, mt := range respRef.Value.Content {
+						if mt != nil {
+							n.walkSchemaRef(mt.Schema, schemas)
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+// walkSchemaRef collects any $ref schema into the map, then recurses into
+// the resolved schema to find further references. Inline schemas (no $ref)
+// are not added to the map but are still traversed so that nested $refs are
+// discovered (e.g. properties inside an allOf inline object).
+func (n *Normalizer) walkSchemaRef(schemaRef *openapi3.SchemaRef, schemas openapi3.Schemas) {
+	if schemaRef == nil || schemaRef.Value == nil {
+		return
+	}
+	if schemaRef.Ref != "" {
+		name := extractRefTypeName(schemaRef.Ref)
+		if name == "" {
+			return
+		}
+		if _, seen := schemas[name]; seen {
+			return
+		}
+		schemas[name] = schemaRef
+	}
+
+	// Always recurse into the resolved schema, even for inline schemas, so
+	// that $refs nested inside inline allOf/properties etc. are discovered.
+	n.walkSchema(schemaRef.Value, schemas)
+}
+
+// walkSchema recurses into a resolved schema value to discover nested $refs.
+func (n *Normalizer) walkSchema(schema *openapi3.Schema, schemas openapi3.Schemas) {
+	if schema == nil {
+		return
+	}
+	if schema.Items != nil {
+		n.walkSchemaRef(schema.Items, schemas)
+	}
+	for _, propRef := range schema.Properties {
+		n.walkSchemaRef(propRef, schemas)
+	}
+	for _, s := range schema.OneOf {
+		n.walkSchemaRef(s, schemas)
+	}
+	for _, s := range schema.AnyOf {
+		n.walkSchemaRef(s, schemas)
+	}
+	for _, s := range schema.AllOf {
+		n.walkSchemaRef(s, schemas)
+	}
+	if schema.AdditionalProperties.Schema != nil {
+		n.walkSchemaRef(schema.AdditionalProperties.Schema, schemas)
+	}
 }

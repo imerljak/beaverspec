@@ -98,8 +98,8 @@ func (m *{{ .Name }}) Validate() error {
 {{- range .Properties }}
 {{- if .HasValidation }}
     // {{ .Name | toPascalCase }}
-{{- if .Required }}
-    if m.{{ .Name | toPascalCase }} {{ zeroCheck .Type }} {
+{{- if .ZeroCheckExpr }}
+    if m.{{ .Name | toPascalCase }} {{ .ZeroCheckExpr }} {
         return fmt.Errorf("{{ .Name }}: required field is missing")
     }
 {{- end }}

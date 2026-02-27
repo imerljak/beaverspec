@@ -50,6 +50,7 @@ type PropertyData struct {
 
 	// Validation constraints
 	Required          bool
+	ZeroCheckExpr     string // Go expression for zero-value check (e.g. `== ""`, `== 0`, `== nil`); empty means skip
 	Format            string
 	MinLength         *int
 	MaxLength         *int
@@ -642,9 +643,19 @@ func (g *Generator) toMethodName(operationID string) string {
 func (g *Generator) convertModels(models []core.Model) []ModelData {
 	var result []ModelData
 	for _, m := range models {
+		// Top-level scalar enum schemas are emitted in the Enums section, not as structs.
+		if isTopLevelEnum(m) {
+			continue
+		}
 		result = append(result, g.convertModel(m))
 	}
 	return result
+}
+
+// isTopLevelEnum returns true for models that represent a named scalar enum
+// type (e.g. type: string + enum values) rather than a struct.
+func isTopLevelEnum(m core.Model) bool {
+	return len(m.Enum) > 0 && m.Type != "" && len(m.Properties) == 0 && !m.IsArray && !m.IsMap && !m.IsOneOf && !m.IsAnyOf
 }
 
 func (g *Generator) convertModel(m core.Model) ModelData {
@@ -759,15 +770,17 @@ func (g *Generator) convertProperties(props []core.Property, modelName string) [
 			enumVals = append(enumVals, fmt.Sprintf("%v", e))
 		}
 		isFormatValidated := codegen.IsFormatValidated(p.Format)
+		goType := g.mapType(p, modelName)
+		zeroExpr := zeroCheckExpr(p, goType)
 		hasValidation := codegen.HasConstraints(
 			p.MinLength != nil, p.MaxLength != nil,
 			p.Minimum != nil, p.Maximum != nil,
-			p.Pattern != "", len(p.Enum) > 0, p.Required,
+			p.Pattern != "", len(p.Enum) > 0, p.Required && zeroExpr != "",
 		) || isFormatValidated
 
 		result = append(result, PropertyData{
 			Name:        p.Name,
-			Type:        g.mapType(p, modelName),
+			Type:        goType,
 			Description: p.Description,
 			JsonTag:     p.Name,
 
@@ -777,6 +790,7 @@ func (g *Generator) convertProperties(props []core.Property, modelName string) [
 			Deprecated: p.Deprecated,
 
 			Required:          p.Required,
+			ZeroCheckExpr:     zeroExpr,
 			Format:            p.Format,
 			MinLength:         p.MinLength,
 			MaxLength:         p.MaxLength,
@@ -790,6 +804,34 @@ func (g *Generator) convertProperties(props []core.Property, modelName string) [
 		})
 	}
 	return result
+}
+
+// zeroCheckExpr returns the Go comparison expression used to detect a zero/missing
+// required field. It uses the underlying OpenAPI scalar type (p.Type) rather than the
+// final Go type name, so that named enum types are handled correctly.
+// Returns "" for types where a required check cannot be generated (e.g. required struct refs).
+func zeroCheckExpr(p core.Property, goType string) string {
+	// Pointer types, slices, maps, and interface{} are always nil-checked.
+	if strings.HasPrefix(goType, "*") ||
+		strings.HasPrefix(goType, "[]") ||
+		strings.HasPrefix(goType, "map[") ||
+		goType == "interface{}" {
+		return "== nil"
+	}
+
+	// Use the underlying OpenAPI type to determine the zero value.
+	// This handles named types (enums) that map to scalar Go types.
+	switch p.Type {
+	case "string":
+		return `== ""`
+	case "integer", "number":
+		return "== 0"
+	case "boolean":
+		return "== false"
+	default:
+		// Object refs (structs): no meaningful scalar zero check — skip.
+		return ""
+	}
 }
 
 func (g *Generator) formatDefault(val interface{}) string {
@@ -926,36 +968,52 @@ func (g *Generator) collectEnums(models []core.Model) []EnumData {
 	var enums []EnumData
 	enumMap := make(map[string]bool) // Track unique enum type names
 
+	// First pass: top-level scalar enum schemas (e.g. CustomerOrderStatus, PickValidationType).
+	// These must be registered before scanning properties so that property-level
+	// inline enums with the same derived name are correctly deduplicated.
+	for _, model := range models {
+		if !isTopLevelEnum(model) {
+			continue
+		}
+		if enumMap[model.Name] {
+			continue
+		}
+		enumMap[model.Name] = true
+
+		baseType := g.mapPrimitiveType(model.Type, "")
+		enumValues := make([]EnumValue, 0, len(model.Enum))
+		for _, val := range model.Enum {
+			constName := model.Name + template.Capitalize(fmt.Sprintf("%v", val))
+			enumValues = append(enumValues, EnumValue{Name: constName, Value: val})
+		}
+		enums = append(enums, EnumData{
+			TypeName:    model.Name,
+			BaseType:    baseType,
+			Description: model.Description,
+			Values:      enumValues,
+		})
+	}
+
+	// Second pass: inline property-level enum values (e.g. CustomField.type → CustomFieldType).
 	for _, model := range models {
 		for _, prop := range model.Properties {
-			// Skip if not an enum
 			if len(prop.Enum) == 0 {
 				continue
 			}
 
-			// Generate eunm type name: ModelName + PropertyName
+			// Generate enum type name: ModelName + PropertyName
 			enumTypeName := model.Name + template.Capitalize(prop.Name)
 
-			// Skip ifwe've already processed this enum type
 			if enumMap[enumTypeName] {
 				continue
 			}
 			enumMap[enumTypeName] = true
 
-			// Determine base type from property type
 			baseType := g.mapPrimitiveType(prop.Type, prop.Format)
-
-			// Convert enum values to EnumValue structs
 			enumValues := make([]EnumValue, 0, len(prop.Enum))
 			for _, val := range prop.Enum {
-				// Generate consntatn name: EnuMType + Value
-				// e.g., "OrderStatus" + "pending" = "OrderStatusPending"
 				constName := enumTypeName + template.Capitalize(fmt.Sprintf("%v", val))
-
-				enumValues = append(enumValues, EnumValue{
-					Name:  constName,
-					Value: val,
-				})
+				enumValues = append(enumValues, EnumValue{Name: constName, Value: val})
 			}
 
 			enums = append(enums, EnumData{
