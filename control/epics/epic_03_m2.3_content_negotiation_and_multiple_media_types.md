@@ -1,7 +1,7 @@
 # M2.3: Content Negotiation & Multiple Media Types
 
 **Type**: Epic
-**Status**: Todo
+**Status**: Done
 
 ## Description
 **Duration**: 4-6 days

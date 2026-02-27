@@ -1,7 +1,7 @@
 # M2.2: Server Generation (Basic)
 
 **Type**: Epic
-**Status**: Todo
+**Status**: Done
 
 ## Description
 **Duration**: 5-7 days

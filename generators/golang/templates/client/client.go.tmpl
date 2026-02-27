@@ -140,8 +140,34 @@ func (c *HTTPClient) {{ .Name }}(ctx context.Context{{- range .PathParams }}, {{
 
     // Check status code
     if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-        body, _ := io.ReadAll(resp.Body)
-        return {{ if .ReturnType }}nil, {{ end }}fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(body))
+        bodyBytes, _ := io.ReadAll(resp.Body)
+        
+        switch resp.StatusCode {
+		{{- $returnType := .ReturnType }}
+		{{- range .Responses }}
+		{{- if .IsError }}
+		{{- if .Type }}
+		{{- if eq .StatusCode "default" }}
+        default:
+		{{- else }}
+        case {{ .StatusCode }}:
+		{{- end }}
+            var apiErr {{ .Type }}
+			{{- if .IsXML }}
+            if err := xml.Unmarshal(bodyBytes, &apiErr); err == nil {
+                return {{ if $returnType }}nil, {{ end }}apiErr
+            }
+			{{- else }}
+            if err := json.Unmarshal(bodyBytes, &apiErr); err == nil {
+                return {{ if $returnType }}nil, {{ end }}apiErr
+            }
+			{{- end }}
+		{{- end }}
+		{{- end }}
+		{{- end }}
+        }
+        
+        return {{ if .ReturnType }}nil, {{ end }}fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(bodyBytes))
     }
 
     {{- if .ReturnType }}

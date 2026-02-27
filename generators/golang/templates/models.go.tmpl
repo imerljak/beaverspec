@@ -93,3 +93,9 @@ type {{ .Name }} struct {
 }
 {{- end }}
 {{ end }}
+
+// APIError is a standard interface for generated API Error structs mapping to status codes
+type APIError interface {
+	error
+	StatusCode() int
+}

@@ -100,16 +100,30 @@ type OperationData struct {
 	HeaderParams    []ParamData
 	HasBody         bool
 	BodyType        string // Type of request body
-	ReturnType      string // Return type
+	Responses       []ResponseData
+	ReturnType      string // Convenience pointer to success return type
+	AcceptType      string // Convenience pointer to success accept type
 	ErrorReturn     bool   // Whether to return error
 	ContentType     string
-	AcceptType      string
 	IsJSONBody      bool
 	IsXMLBody       bool
 	IsFormBody      bool
 	IsMultipartBody bool
 	IsJSONResponse  bool
 	IsXMLResponse   bool
+}
+
+// ResponseData holds information over a mapped model response output
+type ResponseData struct {
+	StatusCode string
+	IsSuccess  bool
+	IsError    bool
+	Type       string
+	AcceptType string
+	IsJSON     bool
+	IsXML      bool
+	HasHeaders bool
+	Headers    []ParamData
 }
 
 // ParamData represents a parameter
@@ -305,11 +319,19 @@ func (g *Generator) convertEndpointsToClient(endpoints []core.Endpoint, modulePa
 		op := g.convertEndpoint(ep)
 		operations = append(operations, op)
 
-		if op.IsJSONBody || op.IsJSONResponse {
+		if op.IsJSONBody {
 			imports.Add("encoding/json")
 		}
-		if op.IsXMLBody || op.IsXMLResponse {
+		if op.IsXMLBody {
 			imports.Add("encoding/xml")
+		}
+		for _, resp := range op.Responses {
+			if resp.IsJSON {
+				imports.Add("encoding/json")
+			}
+			if resp.IsXML {
+				imports.Add("encoding/xml")
+			}
 		}
 		if op.IsFormBody || len(op.QueryParams) > 0 {
 			imports.Add("net/url")
@@ -334,6 +356,7 @@ func (g *Generator) convertEndpointsToServer(endpoints []core.Endpoint, modulePa
 	imports := codegen.NewImportManager(modulePath, baseDir, "server")
 	imports.Add("context")
 	imports.Add("net/http")
+	imports.Add("errors")
 
 	groupsMap := make(map[string][]OperationData)
 
@@ -348,11 +371,19 @@ func (g *Generator) convertEndpointsToServer(endpoints []core.Endpoint, modulePa
 
 		groupsMap[groupName] = append(groupsMap[groupName], op)
 
-		if op.IsJSONBody || op.IsJSONResponse {
+		if op.IsJSONBody {
 			imports.Add("encoding/json")
 		}
-		if op.IsXMLBody || op.IsXMLResponse {
+		if op.IsXMLBody {
 			imports.Add("encoding/xml")
+		}
+		for _, resp := range op.Responses {
+			if resp.IsJSON {
+				imports.Add("encoding/json")
+			}
+			if resp.IsXML {
+				imports.Add("encoding/xml")
+			}
 		}
 	}
 
@@ -393,7 +424,19 @@ func (g *Generator) convertEndpoint(ep core.Endpoint) OperationData {
 
 	// Determine body type and return type
 	bodyType, contentType := g.getRequestBodyType(ep.RequestBody)
-	returnType, acceptType := g.getResponseType(ep.Responses)
+	responsesData := g.extractResponsesData(ep.Responses)
+
+	var returnType, acceptType string
+	var isJSONResponse, isXMLResponse bool
+	for _, r := range responsesData {
+		if r.IsSuccess && r.Type != "" {
+			returnType = r.Type
+			acceptType = r.AcceptType
+			isJSONResponse = r.IsJSON
+			isXMLResponse = r.IsXML
+			break
+		}
+	}
 
 	return OperationData{
 		Name:            methodName,
@@ -406,37 +449,68 @@ func (g *Generator) convertEndpoint(ep core.Endpoint) OperationData {
 		HeaderParams:    paramMap["header"],
 		HasBody:         bodyType != "",
 		BodyType:        bodyType,
+		Responses:       responsesData,
 		ReturnType:      returnType,
+		AcceptType:      acceptType,
 		ErrorReturn:     true, // Always return error
 		ContentType:     contentType,
-		AcceptType:      acceptType,
 		IsJSONBody:      codegen.IsJSON(contentType),
 		IsXMLBody:       codegen.IsXML(contentType),
 		IsFormBody:      codegen.IsFormURLEncoded(contentType),
 		IsMultipartBody: codegen.IsMultipartForm(contentType),
-		IsJSONResponse:  codegen.IsJSON(acceptType),
-		IsXMLResponse:   codegen.IsXML(acceptType),
+		IsJSONResponse:  isJSONResponse,
+		IsXMLResponse:   isXMLResponse,
 	}
 }
 
-// getResponseType determines the return type from responses
-func (g *Generator) getResponseType(responses []core.Response) (string, string) {
-	// Look for 200, 201, or default success response
+// extractResponsesData compiles parsed successful and error-typed responses and headers
+func (g *Generator) extractResponsesData(responses []core.Response) []ResponseData {
+	var respData []ResponseData
+
 	for _, resp := range responses {
-		if resp.StatusCode == "200" || resp.StatusCode == "201" {
-			for contentType, mediaType := range resp.Content {
-				if mediaType.Schema != nil {
-					if mediaType.Schema.RefType != "" {
-						return "*models." + mediaType.Schema.RefType, contentType // TODO: parameterize the package name
-					}
-					return g.mapParameterType(mediaType.Schema), contentType
+		isSuccess := codegen.IsSuccessStatus(resp.StatusCode)
+		isError := codegen.IsErrorStatus(resp.StatusCode)
+
+		var returnType string
+		var acceptType string
+
+		// Simplify by picking the first mapped type implementation matching JSON or XML
+		for cType, mediaType := range resp.Content {
+			if mediaType.Schema != nil {
+				acceptType = cType
+				if mediaType.Schema.RefType != "" {
+					returnType = "*models." + mediaType.Schema.RefType // TODO: parameterize
+				} else {
+					returnType = g.mapParameterType(mediaType.Schema)
 				}
+				break // Only map the first matched type payload per status code for now MVP
 			}
 		}
+
+		var headers []ParamData
+		for name, header := range resp.Headers {
+			headers = append(headers, ParamData{
+				Name:        name,
+				Type:        g.mapParameterType(header.Schema),
+				Description: header.Description,
+				Required:    header.Required,
+			})
+		}
+
+		respData = append(respData, ResponseData{
+			StatusCode: resp.StatusCode,
+			IsSuccess:  isSuccess,
+			IsError:    isError,
+			Type:       returnType,
+			AcceptType: acceptType,
+			IsJSON:     codegen.IsJSON(acceptType),
+			IsXML:      codegen.IsXML(acceptType),
+			HasHeaders: len(headers) > 0,
+			Headers:    headers,
+		})
 	}
 
-	// No body response
-	return "", ""
+	return respData
 }
 
 // getRequestBodyType determines the request body type

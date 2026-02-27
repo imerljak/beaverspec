@@ -1,7 +1,7 @@
 # M2.4: Response Headers & Typed Errors
 
 **Type**: Epic
-**Status**: Todo
+**Status**: Done
 
 ## Description
 **Duration**: 4-6 days

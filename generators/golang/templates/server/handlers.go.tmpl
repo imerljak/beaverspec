@@ -41,6 +41,19 @@ func (s *{{ $handler.Name }}Server) {{ .Name }}(w http.ResponseWriter, r *http.R
     // Execute handler
     {{ if .ReturnType }}resp, {{ end }}err := s.Handler.{{ .Name }}(r.Context(){{ if .HasBody }}, req{{ end }}{{ range .PathParams }}, p_{{ .Name }}{{ end }}{{ range .QueryParams }}, q_{{ .Name }}{{ end }})
     if err != nil {
+		var apiErr models.APIError
+		if errors.As(err, &apiErr) {
+			{{ if .IsXMLResponse }}
+			w.Header().Set("Content-Type", "application/xml")
+			w.WriteHeader(apiErr.StatusCode())
+			xml.NewEncoder(w).Encode(apiErr)
+			{{ else }}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(apiErr.StatusCode())
+			json.NewEncoder(w).Encode(apiErr)
+			{{ end }}
+			return
+		}
         http.Error(w, err.Error(), http.StatusInternalServerError)
         return
     }
