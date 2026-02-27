@@ -75,7 +75,20 @@ type ClientData struct {
 	Imports       []codegen.Import
 }
 
-// OperationData represents a single client operation
+// ServerData represents data for server generation
+type ServerData struct {
+	PackageName string
+	Imports     []codegen.Import
+	Handlers    []HandlerGroup
+}
+
+// HandlerGroup groups operations by tag for routing
+type HandlerGroup struct {
+	Name       string
+	Operations []OperationData
+}
+
+// OperationData represents a single client/server operation
 type OperationData struct {
 	Name         string // Method name (e.g., "ListPets")
 	OperationID  string
@@ -112,13 +125,13 @@ func (g *Generator) Metadata() core.GeneratorMetadata {
 		Description: "Go code generator for OpenAPI specs",
 		Author:      "openapi-gen",
 		Capabilities: core.Capabilities{
-			SupportsClient:     false, // Not yet
-			SupportsServer:     false, // Not yet
+			SupportsClient:     true,
+			SupportsServer:     true,
 			SupportsValidation: false, // Not yet
 			SupportsAsync:      false,
 			SupportsStreaming:  false,
-			ClientFrameworks:   []string{},
-			ServerFrameworks:   []string{},
+			ClientFrameworks:   []string{"net/http"},
+			ServerFrameworks:   []string{"net/http"},
 		},
 	}
 }
@@ -217,6 +230,39 @@ func (g *Generator) Generate(spec *core.Spec, config *core.Config) (*core.Genera
 			Path:    "client/client.go",
 			Content: formattedClientContent,
 		})
+
+		// Generate server logic
+		serverData := g.convertEndpointsToServer(spec.Endpoints, modulePath, baseDir)
+
+		// interface
+		serverInterfaceContent, err := engine.Render("server/interface.go.tmpl", serverData)
+		if err != nil {
+			return nil, fmt.Errorf("failed to render server interface: %w", err)
+		}
+		formattedInterface, err := format.Source([]byte(serverInterfaceContent))
+		if err == nil {
+			files = append(files, core.GeneratedFile{Path: "server/interface.go", Content: formattedInterface})
+		}
+
+		// handlers
+		serverHandlersContent, err := engine.Render("server/handlers.go.tmpl", serverData)
+		if err != nil {
+			return nil, fmt.Errorf("failed to render server handlers: %w", err)
+		}
+		formattedHandlers, err := format.Source([]byte(serverHandlersContent))
+		if err == nil {
+			files = append(files, core.GeneratedFile{Path: "server/handlers.go", Content: formattedHandlers})
+		}
+
+		// routes
+		serverRoutesContent, err := engine.Render("server/routes.go.tmpl", serverData)
+		if err != nil {
+			return nil, fmt.Errorf("failed to render server routes: %w", err)
+		}
+		formattedRoutes, err := format.Source([]byte(serverRoutesContent))
+		if err == nil {
+			files = append(files, core.GeneratedFile{Path: "server/routes.go", Content: formattedRoutes})
+		}
 	}
 
 	// Create the generated file
@@ -267,6 +313,54 @@ func (g *Generator) convertEndpointsToClient(endpoints []core.Endpoint, modulePa
 		InterfaceName: "Client",
 		Operations:    operations,
 		Imports:       imports.GetImports(),
+	}
+}
+
+// convertEndpointsToServer converts core endpoints into server structures
+func (g *Generator) convertEndpointsToServer(endpoints []core.Endpoint, modulePath, baseDir string) ServerData {
+	imports := codegen.NewImportManager(modulePath, baseDir, "server")
+	imports.Add("context")
+	imports.Add("net/http")
+	imports.Add("encoding/json")
+
+	groupsMap := make(map[string][]OperationData)
+
+	for _, ep := range endpoints {
+		op := g.convertEndpoint(ep)
+
+		// Group by first tag if present, else "Default"
+		groupName := "Default"
+		if len(ep.Tags) > 0 {
+			groupName = template.ToPascalCase(ep.Tags[0])
+		}
+
+		groupsMap[groupName] = append(groupsMap[groupName], op)
+	}
+
+	var handlers []HandlerGroup
+	for name, ops := range groupsMap {
+		handlers = append(handlers, HandlerGroup{
+			Name:       name,
+			Operations: ops,
+		})
+	}
+
+	// Make output consistent
+	sort.Slice(handlers, func(i, j int) bool {
+		return handlers[i].Name < handlers[j].Name
+	})
+
+	imports.AddSibling("models")
+
+	// Add fmt/io imports if operations need them (future-proofing)
+	// We add them statically for now as they are very common
+	imports.Add("fmt")
+	imports.Add("io")
+
+	return ServerData{
+		PackageName: "server",
+		Imports:     imports.GetImports(),
+		Handlers:    handlers,
 	}
 }
 
