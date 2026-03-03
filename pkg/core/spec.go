@@ -1,6 +1,10 @@
 package core
 
-import "github.com/getkin/kin-openapi/openapi3"
+import (
+	"strings"
+
+	"github.com/getkin/kin-openapi/openapi3"
+)
 
 // Spec represents a processed OpenAPI specification
 type Spec struct {
@@ -35,6 +39,22 @@ type SecurityScheme struct {
 	Flows            *OAuthFlows
 	OpenIDConnectURL string
 }
+
+// IsAPIKey returns true if the scheme is an API key scheme.
+func (s SecurityScheme) IsAPIKey() bool { return s.Type == "apiKey" }
+
+// IsBearer returns true if the scheme is HTTP Bearer token.
+func (s SecurityScheme) IsBearer() bool {
+	return s.Type == "http" && strings.EqualFold(s.Scheme, "bearer")
+}
+
+// IsBasicAuth returns true if the scheme is HTTP Basic authentication.
+func (s SecurityScheme) IsBasicAuth() bool {
+	return s.Type == "http" && strings.EqualFold(s.Scheme, "basic")
+}
+
+// IsOAuth2 returns true if the scheme is OAuth2.
+func (s SecurityScheme) IsOAuth2() bool { return s.Type == "oauth2" }
 
 // OAuthFlows represents OAuth 2.0 flow configurations
 type OAuthFlows struct {

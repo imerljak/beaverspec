@@ -92,50 +92,25 @@ type ClientData struct {
 	PackageName     string
 	InterfaceName   string
 	Operations      []OperationData
-	Imports         []codegen.Import
-	SecuritySchemes []SecuritySchemeData
+	Imports         []Import
+	SecuritySchemes []codegen.SecuritySchemeData
 }
 
 // ServerData represents data for server generation
 type ServerData struct {
 	PackageName     string
-	Imports         []codegen.Import
+	Imports         []Import
 	ModelsPackage   string // fully-qualified models package path (e.g. "github.com/example/project/models")
 	ModulePath      string // base module path (e.g. "github.com/example/project") — used in main.go imports
 	Handlers        []HandlerGroup
-	SecuritySchemes []SecuritySchemeData
+	SecuritySchemes []codegen.SecuritySchemeData
 	HealthCheck     bool // whether to emit RegisterHealthRoutes (default: true)
-}
-
-// SecuritySchemeData is a template-friendly representation of a security scheme
-type SecuritySchemeData struct {
-	Name        string
-	Type        string
-	In          string // for apiKey
-	KeyName     string // header/query/cookie name for apiKey
-	Scheme      string // "bearer" or "basic" for http
-	IsAPIKey    bool
-	IsBearer    bool
-	IsBasicAuth bool
-	IsOAuth2    bool
 }
 
 // HandlerGroup groups operations by tag for routing
 type HandlerGroup struct {
 	Name       string
 	Operations []OperationData
-}
-
-// SecurityRequirementData contains all info needed to enforce one security scheme in generated code
-type SecurityRequirementData struct {
-	SchemeName  string   // scheme identifier, e.g. "bearerAuth" — used as Go field name base
-	Scopes      []string // OAuth2 scopes (informational)
-	IsBearer    bool
-	IsBasicAuth bool
-	IsAPIKey    bool
-	IsOAuth2    bool
-	APIKeyIn    string // "header", "query", "cookie" for apiKey
-	APIKeyName  string // parameter name for apiKey (e.g. "X-API-Key")
 }
 
 // OperationData represents a single client/server operation
@@ -148,7 +123,7 @@ type OperationData struct {
 	PathParams      []ParamData
 	QueryParams     []ParamData
 	HeaderParams    []ParamData
-	Security        []SecurityRequirementData // security schemes required for this operation
+	Security        []codegen.SecurityRequirementData // security schemes required for this operation
 	HasSecurity     bool                      // true if Security is non-empty
 	HasBody         bool
 	BodyType        string // Type of request body
@@ -424,16 +399,16 @@ func (g *Generator) SupportedFeatures() []core.Feature {
 
 // convertEndpointsToClient converts core endpoints to client data
 func (g *Generator) convertEndpointsToClient(endpoints []core.Endpoint, securityDef []core.SecurityScheme, modulePath, baseDir string, excludeTags []string) ClientData {
-	endpoints = filterEndpointsByTag(endpoints, excludeTags)
+	endpoints = codegen.FilterEndpointsByTag(endpoints, excludeTags)
 
-	imports := codegen.NewImportManager(modulePath, baseDir, "client")
+	imports := NewImportManager(modulePath, baseDir, "client")
 	imports.Add("context")
 	imports.Add("net/http")
 	imports.Add("fmt")
 	imports.Add("io")
 
-	schemes := g.convertSecuritySchemes(securityDef)
-	schemesMap := schemesByName(schemes)
+	schemes := codegen.ConvertSecuritySchemes(securityDef)
+	schemesMap := codegen.SchemesByName(schemes)
 
 	operations := make([]OperationData, 0, len(endpoints))
 
@@ -475,36 +450,16 @@ func (g *Generator) convertEndpointsToClient(endpoints []core.Endpoint, security
 	}
 }
 
-// filterEndpointsByTag removes endpoints whose first tag is in the excluded set.
-// Endpoints with no tags are never excluded.
-func filterEndpointsByTag(endpoints []core.Endpoint, excludeTags []string) []core.Endpoint {
-	if len(excludeTags) == 0 {
-		return endpoints
-	}
-	excluded := make(map[string]bool, len(excludeTags))
-	for _, t := range excludeTags {
-		excluded[t] = true
-	}
-	var result []core.Endpoint
-	for _, ep := range endpoints {
-		if len(ep.Tags) > 0 && excluded[ep.Tags[0]] {
-			continue
-		}
-		result = append(result, ep)
-	}
-	return result
-}
-
 // convertEndpointsToServer converts core endpoints into server structures
 func (g *Generator) convertEndpointsToServer(endpoints []core.Endpoint, securityDef []core.SecurityScheme, modulePath, baseDir string, excludeTags []string, healthCheck bool) ServerData {
-	endpoints = filterEndpointsByTag(endpoints, excludeTags)
-	imports := codegen.NewImportManager(modulePath, baseDir, "server")
+	endpoints = codegen.FilterEndpointsByTag(endpoints, excludeTags)
+	imports := NewImportManager(modulePath, baseDir, "server")
 	imports.Add("context")
 	imports.Add("net/http")
 	imports.Add("errors")
 
-	schemes := g.convertSecuritySchemes(securityDef)
-	schemesMap := schemesByName(schemes)
+	schemes := codegen.ConvertSecuritySchemes(securityDef)
+	schemesMap := codegen.SchemesByName(schemes)
 
 	// Add strings import when auth enforcement code will be emitted
 	if len(schemes) > 0 {
@@ -566,37 +521,9 @@ func (g *Generator) convertEndpointsToServer(endpoints []core.Endpoint, security
 	}
 }
 
-// convertSecuritySchemes converts core.SecurityScheme slice into template-friendly SecuritySchemeData
-func (g *Generator) convertSecuritySchemes(schemes []core.SecurityScheme) []SecuritySchemeData {
-	result := make([]SecuritySchemeData, 0, len(schemes))
-	for _, s := range schemes {
-		result = append(result, SecuritySchemeData{
-			Name:        s.Name,
-			Type:        s.Type,
-			In:          s.In,
-			KeyName:     s.ParameterName, // apiKey: actual header/query/cookie parameter name
-			Scheme:      s.Scheme,
-			IsAPIKey:    codegen.IsAPIKey(s.Type),
-			IsBearer:    codegen.IsHTTP(s.Type) && codegen.IsBearer(s.Scheme),
-			IsBasicAuth: codegen.IsHTTP(s.Type) && codegen.IsBasicAuth(s.Scheme),
-			IsOAuth2:    codegen.IsOAuth2(s.Type),
-		})
-	}
-	return result
-}
-
-// schemesByName builds a lookup map from scheme identifier → SecuritySchemeData
-func schemesByName(schemes []SecuritySchemeData) map[string]SecuritySchemeData {
-	m := make(map[string]SecuritySchemeData, len(schemes))
-	for _, s := range schemes {
-		m[s.Name] = s
-	}
-	return m
-}
-
 // convertEndpoint converts a single endpoint to operation data.
 // schemes is a map from scheme identifier to SecuritySchemeData for resolving security requirements.
-func (g *Generator) convertEndpoint(ep core.Endpoint, schemes map[string]SecuritySchemeData) OperationData {
+func (g *Generator) convertEndpoint(ep core.Endpoint, schemes map[string]codegen.SecuritySchemeData) OperationData {
 	// Generate method name from operation ID
 	methodName := g.toMethodName(ep.OperationID)
 
@@ -620,13 +547,13 @@ func (g *Generator) convertEndpoint(ep core.Endpoint, schemes map[string]Securit
 	}
 
 	// Resolve security requirements to scheme details
-	var security []SecurityRequirementData
+	var security []codegen.SecurityRequirementData
 	for _, req := range ep.Security {
 		scheme, ok := schemes[req.Name]
 		if !ok {
 			continue
 		}
-		security = append(security, SecurityRequirementData{
+		security = append(security, codegen.SecurityRequirementData{
 			SchemeName:  req.Name,
 			Scopes:      req.Scopes,
 			IsBearer:    scheme.IsBearer,

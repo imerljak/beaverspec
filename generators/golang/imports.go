@@ -1,25 +1,25 @@
-package codegen
+package golang
 
 import (
 	"path"
 	"sort"
 )
 
-// Import represents a single import statement
+// Import represents a single Go import statement.
 type Import struct {
-	Path  string // "github.com/user/project/models"
-	Alias string
+	Path  string // e.g. "github.com/user/project/models"
+	Alias string // optional alias (e.g. "echomiddleware")
 }
 
-// ImportManager manages imports for a generated file
+// ImportManager manages imports for a generated Go file.
 type ImportManager struct {
-	modulePath string            // "github.com/user/proj"
-	baseDir    string            // "generated" (output dir relative to module)
-	currentPkg string            // "client" (package we're generating)
+	modulePath string
+	baseDir    string
+	currentPkg string
 	imports    map[string]string // path -> alias
 }
 
-// NewImportManager creates a new import manager
+// NewImportManager creates a new ImportManager.
 func NewImportManager(modulePath, baseDir, currentPkg string) *ImportManager {
 	return &ImportManager{
 		modulePath: modulePath,
@@ -29,7 +29,7 @@ func NewImportManager(modulePath, baseDir, currentPkg string) *ImportManager {
 	}
 }
 
-// Add adds a standad import and returns the local name to use
+// Add registers a standard import and returns the local package name.
 func (m *ImportManager) Add(pkgPath string) string {
 	if _, exists := m.imports[pkgPath]; !exists {
 		m.imports[pkgPath] = ""
@@ -37,42 +37,35 @@ func (m *ImportManager) Add(pkgPath string) string {
 	return path.Base(pkgPath)
 }
 
-// AddWithAlias adds an import with an explicit alias
+// AddWithAlias registers an import with an explicit alias.
 func (m *ImportManager) AddWithAlias(pkgPath, alias string) string {
 	m.imports[pkgPath] = alias
 	return alias
 }
 
-// AddSibling adds an import for a sibling package in the same output directory
-// e.g., from "client" package, AddSibling("models") adds "github.com/.../generated/models"
+// AddSibling registers a sibling package in the same output directory.
+// e.g. from the "client" package, AddSibling("models") adds "modulePath/models".
 func (m *ImportManager) AddSibling(pkgName string) string {
 	if pkgName == m.currentPkg {
-		return "" // don't import self
+		return ""
 	}
-
 	fullPath := path.Join(m.modulePath, pkgName)
 	return m.Add(fullPath)
 }
 
-// GetImports returns all imports sorted alphabetically
+// GetImports returns all registered imports sorted alphabetically.
 func (m *ImportManager) GetImports() []Import {
-	var imports []Import
-
+	imports := make([]Import, 0, len(m.imports))
 	for pkgPath, alias := range m.imports {
 		imports = append(imports, Import{Path: pkgPath, Alias: alias})
 	}
-
-	sortImports(imports)
-	return imports
-}
-
-// HasImports return true if there are any imports
-func (m *ImportManager) HasImports() bool {
-	return len(m.imports) > 0
-}
-
-func sortImports(imports []Import) {
 	sort.Slice(imports, func(i, j int) bool {
 		return imports[i].Path < imports[j].Path
 	})
+	return imports
+}
+
+// HasImports returns true if any imports are registered.
+func (m *ImportManager) HasImports() bool {
+	return len(m.imports) > 0
 }

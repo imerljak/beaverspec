@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/imerljak/beaverspec/pkg/codegen"
 	"github.com/imerljak/beaverspec/pkg/parser"
 )
 
@@ -109,7 +108,7 @@ func findOperation(ops []OperationData, name string) *OperationData {
 	return nil
 }
 
-func containsImport(imports []codegen.Import, target string) bool {
+func containsImport(imports []Import, target string) bool {
 	for _, imp := range imports {
 		if imp.Path == target {
 			return true

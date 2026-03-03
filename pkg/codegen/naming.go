@@ -7,15 +7,7 @@ import (
 	"strings"
 )
 
-type NamingConverter interface {
-	TypeName(string) string
-	FieldName(string) string
-	FunctionName(string) string
-	VariableName(string) string
-	FileName(string) string
-}
-
-// FilterEmptyStrings Filters out empty strings from input array
+// filterEmptyStrings Filters out empty strings from input array
 func filterEmptyStrings(input []string) []string {
 	var filtered []string
 	for _, w := range input {
