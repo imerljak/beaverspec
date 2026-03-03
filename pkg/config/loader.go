@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 
@@ -78,8 +79,12 @@ func LoadFile(path string) (*core.Config, error) {
 }
 
 // FindConfigFile searches dir for beaver.yaml or beaver.json.
-// Returns the absolute path if found, or "" if neither exists.
+// Returns the absolute path if found, or "" if not found.
+// Returns "" immediately if dir is an HTTP/HTTPS URL (remote specs have no local config file).
 func FindConfigFile(dir string) string {
+	if strings.HasPrefix(dir, "http://") || strings.HasPrefix(dir, "https://") {
+		return ""
+	}
 	for _, name := range []string{"beaver.yaml", "beaver.yml", "beaver.json"} {
 		candidate := filepath.Join(dir, name)
 		if _, err := os.Stat(candidate); err == nil {
@@ -216,9 +221,12 @@ func toConfig(cf configFile, baseDir string) *core.Config {
 }
 
 // resolvePath resolves path relative to baseDir if it's not absolute.
-// Returns "" unchanged.
+// Returns "" and URL strings unchanged.
 func resolvePath(path, baseDir string) string {
 	if path == "" || filepath.IsAbs(path) {
+		return path
+	}
+	if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
 		return path
 	}
 	return filepath.Join(baseDir, path)

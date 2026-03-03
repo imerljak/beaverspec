@@ -804,12 +804,11 @@ func (g *Generator) convertModel(m core.Model) ModelData {
 				mapping[key] = typeName
 			}
 		} else {
-			// Implicit mapping - use variant names (lowercase as discriminator value)
+			// Implicit mapping: per OpenAPI 3.0 spec, the discriminator value
+			// MUST be the schema name itself (exact case, not lowercased).
+			// e.g., "Circle" -> Circle
 			for _, variant := range unionVariants {
-				// Use lowercase variant name as discriminator value
-				// e.g., "Circle" -> "circle"
-				key := strings.ToLower(variant)
-				mapping[key] = variant
+				mapping[variant] = variant
 			}
 		}
 

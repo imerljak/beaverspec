@@ -1,213 +1,165 @@
 # BeaverSpec 🦫
 
-**A modern OpenAPI code generator with first-class template support**
+**A modern OpenAPI code generator for Go**
 
-BeaverSpec is a flexible, plugin-based OpenAPI 3.x code generator written in Go. It generates production-ready client and server code from OpenAPI specifications, with better template customization than traditional tools.
+BeaverSpec generates production-ready Go server and client code from OpenAPI 3.x specifications — no JVM required, no YAML-hell, just a single Go binary.
 
 [![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![OpenAPI](https://img.shields.io/badge/OpenAPI-3.x-6BA539?style=flat&logo=openapi-initiative)](https://www.openapis.org/)
 
 ## Why BeaverSpec?
 
-- **🎯 Template-First**: 80% of language support through configuration + templates
-- **🔌 Plugin Architecture**: Clean separation between syntax (templates) and semantics (plugins)
-- **⚙️ Highly Configurable**: CLI flags → env vars → config files with intelligent merging
-- **🚀 Modern Go**: Built with Go 1.21+, leveraging the latest language features
-- **📦 Zero Dependencies**: Single binary with embedded templates
-- **🎨 Full OpenAPI 3.x Support**: All schema features including oneOf, allOf, discriminators
+- **No JVM** — single Go binary, install in one command
+- **Go-idiomatic output** — structs, interfaces, `error` returns, `context.Context`
+- **Four frameworks** — `net/http`, Chi, Echo, Gin — switch with one flag
+- **Template customization** — override any template with your own `text/template` file
+- **Remote specs** — point at a URL, no need to download specs manually
+- **Selective generation** — models only, server only, or everything
 
-## Current Status
+## Status
 
-**Phase 1**: ✅ Complete - Core architecture and Go models generator
-**Phase 2**: 🚧 In Progress - Client/server generation and shared tooling
+**Phase 1**: ✅ Complete — Core architecture, OpenAPI parsing, Go models generation
+**Phase 2**: ✅ Complete — Server/client generation, framework support, security, validation, config system, integration polish
 
-### Implemented Features
+## Features
 
-- ✅ Complete OpenAPI 3.x spec parsing and normalization
-- ✅ Go models generation with comprehensive type support:
-  - Basic types (string, integer, number, boolean, object)
-  - Arrays and maps (via additionalProperties)
-  - Nested objects and $ref resolution
-  - Enums with constants
-  - allOf composition (struct embedding)
-  - oneOf/anyOf polymorphism with discriminators
-  - Field metadata (default, readOnly, writeOnly, deprecated)
-- ✅ Basic HTTP client generation
-- ✅ Auto-generated tests (compilation and serialization)
-- ✅ Dynamic import management
+- ✅ Complete OpenAPI 3.x parsing (local files and remote URLs)
+- ✅ Go models with JSON tags and `Validate()` methods
+- ✅ allOf (struct embedding), oneOf/anyOf (discriminator, union types), enums, maps, arrays
+- ✅ HTTP client with typed methods per endpoint
+- ✅ Server handler interface + mock implementations
+- ✅ Four framework targets: `net-http`, `chi`, `echo`, `gin`
+- ✅ Request/response validation with typed error models
+- ✅ Content negotiation (multiple `produces`/`consumes` types)
+- ✅ Security scheme extraction (Bearer, API Key, Basic, OAuth2)
+- ✅ Middleware generation (logging, CORS, rate limiter — stdlib only)
+- ✅ Graceful shutdown example `main.go` per framework
+- ✅ External `$ref` resolution (local files and URLs)
+- ✅ Template customization and override system
+- ✅ `beaver.yaml` config file with full schema support
 
 ## Quick Start
 
-### Installation
-
 ```bash
-# Clone the repository
-git clone https://github.com/imerljak/beaverspec.git
-cd beaverspec
-
-# Build the CLI
-go build -o beaver ./cmd/beaver
-
-# Or install directly
+# Install
 go install github.com/imerljak/beaverspec/cmd/beaver@latest
+
+# Generate from a local spec
+beaver -spec openapi.yaml -output ./generated -module github.com/example/myapi
+
+# Generate from a remote spec
+beaver -spec https://petstore3.swagger.io/api/v3/openapi.json \
+  -output ./generated -module github.com/example/petstore
+
+# Choose a framework
+beaver -spec openapi.yaml -output ./generated -module github.com/example/myapi -framework chi
+
+# Preview without writing files
+beaver -spec openapi.yaml -output ./generated -module github.com/example/myapi -dry-run
 ```
 
-### Generate Code
+## Generated Files
 
-```bash
-# Generate Go models and client from OpenAPI spec
-beaver -spec ./examples/petstore.yaml -output ./generated
+For a spec with endpoints and schemas, `beaver` generates up to 9 files:
 
-# Output:
-# ✓ Successfully generated 3 file(s) in generated
-#   - models.go
-#   - models_test.go
-#   - client.go
+```
+generated/
+├── models/
+│   ├── models.go          # Typed structs, json tags, Validate() methods
+│   └── models_test.go     # Auto-generated validation tests
+├── client/
+│   └── client.go          # Typed HTTP client
+├── server/
+│   ├── interface.go       # Handler interface — implement this
+│   ├── mocks.go           # Mock implementations for quick start
+│   ├── handlers.go        # HTTP adapter (routes to interface)
+│   ├── routes.go          # Route registration per tag group
+│   └── middleware.go      # Logging, CORS, rate limiter (stdlib)
+└── cmd/server/
+    └── main.go            # Runnable example entrypoint (edit freely)
 ```
 
-### Use Generated Code
+## Config File
 
-```go
-package main
+Create `beaver.yaml` next to your spec to avoid repeating flags:
 
-import (
-    "context"
-    "fmt"
-    "github.com/yourproject/generated/models"
-)
+```yaml
+spec: ./openapi.yaml
+output: ./generated
+module: github.com/example/myapi
+framework: chi
 
-func main() {
-    // Create a new client
-    client := models.NewClient("https://petstore.swagger.io/v2")
+generate:
+  models: true
+  client: true
+  server: true
 
-    // List pets
-    limit := int32(10)
-    pets, err := client.ListPets(context.Background(), &limit)
-    if err != nil {
-        panic(err)
-    }
+exclude:
+  tags: [internal]
 
-    fmt.Printf("Found %d pets\n", len(*pets))
-}
+types:
+  overrides:
+    - format: uuid
+      go: "github.com/google/uuid".UUID
 ```
 
-## Generated Code Features
+Then just run `beaver` with no flags.
 
-### Models
-- Type-safe structs from OpenAPI schemas
-- JSON serialization tags
-- Pointer types for optional fields
-- Embedded structs for allOf composition
-- Interface types for oneOf/anyOf polymorphism
-- Enum constants with validation
+## CLI Reference
 
-### Client
-- Interface-based design for easy mocking
-- Context support for cancellation
-- Typed request/response models
-- Automatic JSON serialization
-- Configurable HTTP client
-- Custom headers support
-
-### Tests
-- Compilation verification tests
-- JSON serialization round-trip tests
-- Generated automatically with models
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-spec` | — | OpenAPI spec path or URL (required) |
+| `-output` | `.` | Output directory |
+| `-module` | `github.com/example/project` | Go module path |
+| `-framework` | `net-http` | Server framework: `net-http`, `chi`, `echo`, `gin` |
+| `-config` | auto | Config file path (auto-discovers `beaver.yaml` next to spec) |
+| `-package` | `models` | Package name for generated models |
+| `-generator` | `go` | Generator to use |
+| `-dry-run` | false | Print files that would be generated, don't write |
+| `-debug` | false | Enable debug logging |
+| `-version` | — | Print version and exit |
 
 ## Project Structure
 
 ```
 beaverspec/
-├── cmd/beaver/              # CLI entry point
+├── cmd/beaver/          # CLI entry point
 ├── pkg/
-│   ├── core/                # Core interfaces and types
-│   ├── parser/              # OpenAPI spec parsing
-│   ├── plugin/              # Generator registry
-│   └── template/            # Template engine
+│   ├── core/            # Core types and interfaces
+│   ├── parser/          # OpenAPI parsing and normalization
+│   ├── config/          # Config file loading and merging
+│   ├── codegen/         # Validation codegen helpers
+│   └── template/        # Template engine
 ├── generators/
-│   └── golang/              # Go generator
-│       ├── generator.go     # Generator implementation
-│       ├── config.yaml      # Type mappings and config
-│       └── templates/       # Go templates
-│           ├── core/        # Models templates
-│           └── client/      # Client templates
-└── examples/                # Example OpenAPI specs
+│   └── golang/          # Go generator + templates
+│       └── templates/   # Per-framework Go templates
+└── examples/            # Example OpenAPI specs
 ```
 
-## Examples
+## Documentation
 
-### Simple Pet Store
-```bash
-beaver -spec ./examples/petstore.yaml -output ./gen
-```
-
-Generates models and client for the classic Swagger Petstore API.
-
-## Roadmap
-
-**Phase 2** (In Progress):
-- Server generation (handlers, routes, middleware)
-- Multiple framework support (Chi, Echo, Gin)
-- Authentication/authorization
-- Request/response validation
-- Shared cross-language tooling
-
-**Phase 3** (Planned):
-- TypeScript/JavaScript generator
-- Python generator
-
-**Phase 4** (Future):
-- Additional languages (Java, Rust, etc.)
-- Advanced features (streaming, webhooks, etc.)
+- [Quick Start](docs/QUICK_START.md) — 5-minute walkthrough
+- [API Reference](docs/API_REFERENCE.md) — all flags, config schema, generated file reference
+- [Migration Guide](docs/MIGRATION_GUIDE.md) — migrating from `openapi-generator-cli`
 
 ## Development
 
-### Prerequisites
-- Go 1.21 or higher
-- Basic understanding of OpenAPI 3.x
-
-### Build
 ```bash
 go build -o beaver ./cmd/beaver
-```
-
-### Run Tests
-```bash
 go test ./...
+go run ./cmd/beaver -spec examples/petstore.yaml -output /tmp/gen -module github.com/example/petstore -dry-run
 ```
-
-### Run with Example
-```bash
-go run ./cmd/beaver -spec examples/petstore.yaml -output generated
-```
-
-## Contributing
-
-Contributions are welcome! Feel free to open issues or submit pull requests.
-
-## Philosophy
-
-BeaverSpec follows these principles:
-
-1. **Data over Code**: Configuration and templates should handle most language differences
-2. **Plugin-based**: Clear separation between OpenAPI semantics and language syntax
-3. **Template Granularity**: Use-specific templates (not monolithic) for selective generation
-4. **Sensible Defaults**: Work out-of-the-box with intelligent defaults
-5. **Production Ready**: Generated code should be production-quality, not just prototypes
-
-## Why "BeaverSpec"?
-
-Beavers are nature's engineers, known for building robust, well-structured dams. Like a beaver, this tool helps you build solid, reliable API implementations from specifications. Plus, beavers are adorable 🦫
 
 ## License
 
-MIT License - see [LICENSE](./LICENSE) for details
+MIT License — see [LICENSE](./LICENSE) for details.
 
 ## Acknowledgments
 
 - Built with [kin-openapi](https://github.com/getkin/kin-openapi) for OpenAPI parsing
-- Inspired by [openapi-generator](https://github.com/OpenAPITools/openapi-generator) but modernized for the Go ecosystem
+- Inspired by [openapi-generator](https://github.com/OpenAPITools/openapi-generator), redesigned for the Go ecosystem
 
 ---
 
-**Built with ❤️ and Go**
+*Beavers are nature's engineers, known for building robust, well-structured dams. 🦫*

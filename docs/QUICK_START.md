@@ -1,632 +1,231 @@
-# OpenAPI Code Generator - Quick Start Guide
+# BeaverSpec Quick Start
 
-## What is OpenAPI Code Generator?
+## What is BeaverSpec?
 
-OpenAPI Code Generator is a Go-based tool that automatically generates client and server code from your OpenAPI 3.x API specifications. It's designed to be flexible, extensible, and easy to customize.
+BeaverSpec (`beaver`) is a CLI tool that generates Go server, client, and model code from OpenAPI 3.x specifications. Point it at a spec file or URL and it produces idiomatic, ready-to-compile Go code for the framework of your choice.
 
-## Why Use This Generator?
-
-- ✅ **Multiple Languages**: Generate code for Go, TypeScript, Python, and more
-- ✅ **Framework Support**: Choose from popular frameworks (Chi, Echo, Gin for Go)
-- ✅ **Customizable**: Override templates and configuration
-- ✅ **Selective Generation**: Generate only what you need (client, server, models)
-- ✅ **Type-Safe**: Leverages language type systems for safety
-- ✅ **Go-Native**: Written in Go, fast and reliable
+---
 
 ## Installation
 
-### Binary Release (Recommended)
+### go install (recommended)
 
 ```bash
-# Download latest release for your platform
-curl -L https://github.com/yourorg/beaverspec/releases/latest/download/beaverspec-linux-amd64 -o beaverspec
-chmod +x beaverspec
-sudo mv beaverspec /usr/local/bin/
+go install github.com/imerljak/beaverspec/cmd/beaver@latest
 ```
 
-### Build from Source
+### Build from source
 
 ```bash
-git clone https://github.com/yourorg/beaverspec.git
+git clone https://github.com/imerljak/beaverspec.git
 cd beaverspec
-go build -o beaverspec ./cmd/beaver
+go build -o beaver ./cmd/beaver
 ```
 
-### Go Install
+---
 
-```bash
-go install github.com/yourorg/beaverspec/cmd/beaverspec@latest
-```
+## 5-Minute Quickstart
 
-## Quick Start
+### 1. Write a minimal spec
 
-### 1. Create an OpenAPI Specification
-
-Create a file `openapi.yaml`:
+Create `openapi.yaml`:
 
 ```yaml
-openapi: 3.0.0
+openapi: "3.0.3"
 info:
-  title: My API
-  version: 1.0.0
+  title: Notes API
+  version: "1.0.0"
 paths:
-  /users:
+  /notes:
     get:
-      summary: List users
+      summary: List notes
+      operationId: listNotes
+      tags: [notes]
       responses:
-        '200':
-          description: Success
+        "200":
+          description: OK
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/User'
+                  $ref: "#/components/schemas/Note"
 components:
   schemas:
-    User:
+    Note:
       type: object
-      required:
-        - id
-        - email
+      required: [id, body]
       properties:
         id:
           type: integer
           format: int64
-        email:
-          type: string
-          format: email
-        name:
+        body:
           type: string
 ```
 
-### 2. Generate Code
+### 2. Generate code
 
 ```bash
-# Generate Go client
-beaverspec generate --spec openapi.yaml --generator go --client
-
-# Generate TypeScript client
-beaverspec generate --spec openapi.yaml --generator typescript --client
-
-# Generate both client and server
-beaverspec generate --spec openapi.yaml --generator go --client --server
+beaver -spec openapi.yaml -output ./generated -module github.com/example/myapi
 ```
 
-### 3. Use Generated Code
-
-The generated code will be in `./generated/` directory:
-
-```go
-// Go example
-package main
-
-import (
-    "context"
-    "fmt"
-    "generated/client"
-)
-
-func main() {
-    client := client.NewClient("https://api.example.com")
-    users, err := client.ListUsers(context.Background())
-    if err != nil {
-        panic(err)
-    }
-    fmt.Printf("Found %d users\n", len(users))
-}
-```
-
-## Configuration
-
-### Project Configuration File
-
-Create `.beaverspec.yaml` in your project root:
-
-```yaml
-# Which generator to use
-generator: go
-
-# OpenAPI spec location
-spec: ./openapi.yaml
-
-# Output directory
-output: ./internal/api
-
-# What to generate
-generate:
-  models: true
-  client: true
-  server: false
-  validation: false
-
-# Generator-specific options
-go:
-  package: "myservice"
-  use_generics: true
-
-# Client configuration
-client:
-  framework: "http"
-```
-
-Now you can just run:
-
-```bash
-beaverspec generate
-```
-
-### User Configuration File
-
-For user-wide defaults, create `~/.beaverspec/config.yaml`:
-
-```yaml
-defaults:
-  output: ./generated
-  generate:
-    validation: true
-
-generators:
-  go:
-    package: "api"
-  typescript:
-    target: "es2020"
-```
-
-## Common Use Cases
-
-### Generate Client Only
-
-```yaml
-# .beaverspec.yaml
-generator: go
-spec: ./openapi.yaml
-
-generate:
-  models: true
-  client: true
-  server: false
-```
-
-### Generate Server Only
-
-```yaml
-# .beaverspec.yaml
-generator: go
-spec: ./openapi.yaml
-
-generate:
-  models: true
-  client: false
-  server: true
-
-server:
-  framework: "chi"
-```
-
-### Generate with Specific Framework
-
-```yaml
-# .beaverspec.yaml
-generator: go
-spec: ./openapi.yaml
-
-generate:
-  models: true
-  client: true
-  server: true
-
-client:
-  framework: "http"
-
-server:
-  framework: "echo"
-```
-
-### Models Only (for sharing types)
-
-```yaml
-# .beaverspec.yaml
-generator: typescript
-spec: ./openapi.yaml
-
-generate:
-  models: true
-  client: false
-  server: false
-```
-
-## Customizing Templates
-
-### Override Specific Templates
-
-```yaml
-# .beaverspec.yaml
-generator: go
-spec: ./openapi.yaml
-
-templates:
-  overrides:
-    "client/http": "./my-templates/custom-client.go.tmpl"
-```
-
-### Use Custom Template Directory
-
-```yaml
-# .beaverspec.yaml
-generator: go
-spec: ./openapi.yaml
-
-templates:
-  custom_dir: ./my-templates
-```
-
-Your custom templates will be used instead of built-in ones.
-
-## Available Generators
-
-### Go
-
-**Features**:
-- Multiple server frameworks (Chi, Echo, Gin, standard http)
-- Multiple client frameworks (standard http, resty)
-- Generics support (Go 1.18+)
-- Validation generation
-
-**Configuration**:
-```yaml
-generator: go
-
-go:
-  package: "api"
-  use_generics: true
-  json_tag_case: "camelCase"
-
-client:
-  framework: "http"  # or "resty"
-
-server:
-  framework: "chi"   # or "echo", "gin", "http"
-```
-
-### TypeScript
-
-**Features**:
-- ES modules or CommonJS
-- Type-safe clients
-- Validation support
-
-**Configuration**:
-```yaml
-generator: typescript
-
-typescript:
-  target: "es2020"
-  module_type: "esm"
-  strict_null_checks: true
-```
-
-### Python
-
-**Features**:
-- Dataclasses or Pydantic models
-- Type hints
-- Async/await support
-
-**Configuration**:
-```yaml
-generator: python
-
-python:
-  version: "3.10"
-  use_dataclasses: true
-  use_pydantic: false
-```
-
-## CLI Reference
-
-### Generate Command
-
-```bash
-beaverspec generate [flags]
-
-Flags:
-  -s, --spec string          OpenAPI spec file
-  -g, --generator string     Generator to use (go, typescript, python)
-  -o, --output string        Output directory
-  -c, --config string        Config file
-      --models               Generate models
-      --client               Generate client
-      --server               Generate server
-      --validation           Generate validation
-      --framework string     Framework to use
-      --dry-run             Show what would be generated
-  -v, --verbose             Verbose output
-```
-
-### Validate Command
-
-```bash
-beaverspec validate [flags]
-
-Flags:
-  -s, --spec string     OpenAPI spec file
-      --strict          Enable strict validation
-  -v, --verbose         Verbose output
-```
-
-### List Generators
-
-```bash
-beaverspec list [--detailed]
-```
-
-Shows available generators and their capabilities.
-
-### Version
-
-```bash
-beaverspec version
-```
-
-## Directory Structure Examples
-
-### Flat Output
-
-```
-generated/
-├── models.go
-├── client.go
-├── server.go
-└── types.go
-```
-
-### Organized Output (Recommended)
+### 3. What gets generated
 
 ```
 generated/
 ├── models/
-│   ├── user.go
-│   ├── product.go
-│   └── order.go
+│   ├── models.go          # Go structs with json tags and Validate() methods
+│   └── models_test.go     # Validation tests
 ├── client/
-│   ├── client.go
-│   ├── user_api.go
-│   └── product_api.go
-└── server/
-    ├── handlers.go
-    └── routes.go
+│   └── client.go          # HTTP client with typed methods per endpoint
+├── server/
+│   ├── interface.go       # Handler interface — implement this
+│   ├── mocks.go           # Mock implementations for quick start
+│   ├── handlers.go        # HTTP adapter layer
+│   ├── routes.go          # Route registration per tag group
+│   └── middleware.go      # Logging, CORS, rate limiter (stdlib)
+└── cmd/server/
+    └── main.go            # Runnable example entry point
 ```
 
-Configure with:
+For specs with no endpoints (schemas only), only `models/models.go` and `models/models_test.go` are generated.
+
+---
+
+## Using the Generated Server
+
+### Step 1 — Add the generated code to your module
+
+The generated code lives under the output directory you specified. Make sure the `-module` value matches the `module` line in your `go.mod`:
+
+```
+module github.com/example/myapi
+
+go 1.21
+```
+
+Run `go mod tidy` from the root of your project after generation.
+
+### Step 2 — Implement the handler interface
+
+Open `generated/server/interface.go`. It will contain something like:
+
+```go
+type NotesHandler interface {
+    ListNotes(w http.ResponseWriter, r *http.Request) error
+}
+```
+
+Create your own implementation:
+
+```go
+package main
+
+import (
+    "encoding/json"
+    "net/http"
+
+    "github.com/example/myapi/generated/models"
+)
+
+type MyNotesHandler struct{}
+
+func (h *MyNotesHandler) ListNotes(w http.ResponseWriter, r *http.Request) error {
+    notes := []models.Note{{Id: 1, Body: "hello"}}
+    w.Header().Set("Content-Type", "application/json")
+    return json.NewEncoder(w).Encode(notes)
+}
+```
+
+### Step 3 — Wire it up and run
+
+`cmd/server/main.go` is a real, runnable entry point. Edit it freely — it is yours to own. It wires your handler implementation to the generated routes. Run it with:
+
+```bash
+go run ./generated/cmd/server/main.go
+```
+
+---
+
+## Framework Selection
+
+Use the `-framework` flag to select a server framework. The generated `handlers.go`, `routes.go`, and `cmd/server/main.go` will use the framework's idioms.
+
+```bash
+# stdlib net/http (default)
+beaver -spec openapi.yaml -output ./generated -module github.com/example/myapi -framework net-http
+
+# chi
+beaver -spec openapi.yaml -output ./generated -module github.com/example/myapi -framework chi
+
+# echo
+beaver -spec openapi.yaml -output ./generated -module github.com/example/myapi -framework echo
+
+# gin
+beaver -spec openapi.yaml -output ./generated -module github.com/example/myapi -framework gin
+```
+
+---
+
+## Config File (beaver.yaml)
+
+Instead of passing flags every time, place a `beaver.yaml` next to your spec file (or point to one with `-config`). All fields are optional.
 
 ```yaml
-output:
-  structure: "organized"  # or "flat"
-```
-
-## Environment Variables
-
-You can use environment variables for configuration:
-
-```bash
-export OPENAPI_GEN_SPEC=./openapi.yaml
-export OPENAPI_GEN_GENERATOR=go
-export OPENAPI_GEN_OUTPUT=./generated
-
-beaverspec generate
-```
-
-## Troubleshooting
-
-### Validation Errors
-
-```bash
-# Validate your spec first
-beaverspec validate --spec openapi.yaml
-```
-
-### Verbose Output
-
-```bash
-# See detailed generation process
-beaverspec generate --verbose
-```
-
-### Dry Run
-
-```bash
-# See what would be generated without writing files
-beaverspec generate --dry-run
-```
-
-### Common Issues
-
-**Issue**: "Generator not found"
-```bash
-# List available generators
-beaverspec list
-```
-
-**Issue**: "Invalid OpenAPI spec"
-```bash
-# Validate your spec
-beaverspec validate --spec openapi.yaml --strict
-```
-
-**Issue**: "Template rendering failed"
-```bash
-# Check template syntax and data
-beaverspec generate --verbose
-```
-
-## Best Practices
-
-### 1. Version Control
-
-Add to `.gitignore`:
-```
-generated/
-.beaverspec.cache
-```
-
-Commit your `.beaverspec.yaml` config file.
-
-### 2. CI/CD Integration
-
-```yaml
-# .github/workflows/generate.yml
-name: Generate API Code
-
-on:
-  push:
-    paths:
-      - 'openapi.yaml'
-
-jobs:
-  generate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - name: Install beaverspec
-        run: |
-          curl -L https://github.com/yourorg/beaverspec/releases/latest/download/beaverspec-linux-amd64 -o beaverspec
-          chmod +x beaverspec
-      - name: Generate code
-        run: ./beaverspec generate
-      - name: Commit changes
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add generated/
-          git commit -m "Auto-generate API code" || true
-          git push
-```
-
-### 3. Project Structure
-
-Recommended structure:
-
-```
-my-project/
-├── api/
-│   └── openapi.yaml          # API specification
-├── internal/
-│   └── generated/            # Generated code
-│       ├── models/
-│       ├── client/
-│       └── server/
-├── cmd/
-│   └── server/
-│       └── main.go           # Uses generated server
-├── .beaverspec.yaml         # Generator config
-└── go.mod
-```
-
-### 4. Template Customization
-
-Start with built-in templates, then customize:
-
-1. Generate with built-in templates
-2. Copy the template you want to customize
-3. Modify it for your needs
-4. Reference it in config
-
-```bash
-# Find built-in templates
-beaverspec list --detailed
-
-# Copy and customize
-cp ~/.beaverspec/templates/go/client/http.go.tmpl ./templates/
-# Edit ./templates/http.go.tmpl
-
-# Use in config
-templates:
-  overrides:
-    "client/http": "./templates/http.go.tmpl"
-```
-
-## Examples
-
-Check the `examples/` directory for complete examples:
-
-- `examples/petstore/` - Classic Petstore API
-- `examples/todo-api/` - Simple TODO API
-- `examples/ecommerce/` - E-commerce API with complex schemas
-
-## Getting Help
-
-- **Documentation**: Read the full docs in `docs/`
-- **Issues**: Report bugs or request features on GitHub
-- **Discussions**: Ask questions in GitHub Discussions
-- **Contributing**: See `CONTRIBUTING.md` for contribution guidelines
-
-## What's Next?
-
-1. **Read the Architecture**: `docs/ARCHITECTURE.md` - Understand the design
-2. **Explore Templates**: Look at built-in templates for examples
-3. **Customize**: Create your own templates and configurations
-4. **Contribute**: Add support for new languages or frameworks
-
-## Quick Reference Card
-
-```bash
-# Basic generation
-beaverspec generate --spec api.yaml --generator go --client
-
-# With config file
-beaverspec generate
-
-# Validate spec
-beaverspec validate --spec api.yaml
-
-# List generators
-beaverspec list
-
-# Dry run
-beaverspec generate --dry-run
-
-# Verbose output
-beaverspec generate --verbose
-```
-
-## Configuration Quick Reference
-
-```yaml
-# Minimal config
-generator: go
 spec: ./openapi.yaml
-
-# Full config
-generator: go
-spec: ./openapi.yaml
-output: ./internal/api
+output: ./generated
+module: github.com/example/myapi
+package: models
+framework: chi
 
 generate:
   models: true
   client: true
   server: true
-  validation: false
+  validation: true
 
-go:
-  package: "myapi"
-  use_generics: true
+exclude:
+  models: [InternalError]   # skip generating these schema names
+  tags: [internal]          # skip all operations under these tags
 
-client:
-  framework: "http"
-
-server:
-  framework: "chi"
-
-templates:
-  custom_dir: ./templates
+types:
   overrides:
-    "client/http": "./templates/custom.go.tmpl"
+    - format: uuid
+      go: "github.com/google/uuid".UUID
 
-output:
-  structure: "organized"
+options:
+  healthCheck: true   # include /health endpoint (default: true)
+  middleware: true    # generate server/middleware.go (default: true)
+  exampleMain: true   # generate cmd/server/main.go (default: true)
+```
+
+With a config file in place, just run:
+
+```bash
+beaver
 ```
 
 ---
 
-**Happy Code Generating! 🚀**
+## Remote Specs
+
+`beaver` can fetch a spec directly from a URL:
+
+```bash
+beaver \
+  -spec https://petstore3.swagger.io/api/v3/openapi.json \
+  -output ./generated \
+  -module github.com/example/petstore
+```
+
+---
+
+## Dry Run
+
+Preview the files that would be generated without writing anything to disk:
+
+```bash
+beaver -spec openapi.yaml -output ./generated -module github.com/example/myapi -dry-run
+```
+
+This prints each file path that would be created, which is useful for understanding output before committing to a directory layout.

@@ -2,6 +2,8 @@ package parser
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -106,6 +108,33 @@ func TestNormalizerExtractInfo(t *testing.T) {
 
 	if specInfo.License.Name != "GPL" {
 		t.Errorf("expected License.Name 'GPL', got '%s'", specInfo.License.Name)
+	}
+}
+
+// TestLoadSpecFromURL tests loading an OpenAPI spec from an HTTP URL
+func TestLoadSpecFromURL(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"openapi":"3.0.0","info":{"title":"URL Test","version":"1.0.0"},"paths":{}}`))
+	}))
+	defer srv.Close()
+
+	p := NewParser()
+	spec, err := p.LoadSpec(context.Background(), srv.URL)
+	if err != nil {
+		t.Fatalf("LoadSpec from URL failed: %v", err)
+	}
+	if spec.Info.Title != "URL Test" {
+		t.Errorf("expected title 'URL Test', got %q", spec.Info.Title)
+	}
+}
+
+// TestLoadSpecFromInvalidURL tests that an invalid URL is rejected
+func TestLoadSpecFromInvalidURL(t *testing.T) {
+	p := NewParser()
+	_, err := p.LoadSpec(context.Background(), "https://")
+	if err == nil {
+		t.Error("expected error for invalid URL, got nil")
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/imerljak/beaverspec/generators/golang"
 	"github.com/imerljak/beaverspec/pkg/config"
@@ -51,9 +52,12 @@ func main() {
 	// 2. Build config: start from file (if any), then apply CLI overrides
 	cfg := &core.Config{}
 
-	// Determine config file path: explicit flag or auto-discover next to spec
+	// Determine config file path: explicit flag takes priority, then auto-discover
+	// next to spec. Auto-discovery is skipped for remote specs (http/https URLs
+	// have no local sibling file), but an explicit -config flag always works.
 	cfgPath := *configFlag
-	if cfgPath == "" && *specFilePath != "" {
+	isRemoteSpec := strings.HasPrefix(*specFilePath, "http://") || strings.HasPrefix(*specFilePath, "https://")
+	if cfgPath == "" && *specFilePath != "" && !isRemoteSpec {
 		cfgPath = config.FindConfigFile(filepath.Dir(*specFilePath))
 	}
 	if cfgPath != "" {

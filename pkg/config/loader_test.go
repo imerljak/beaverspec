@@ -115,6 +115,43 @@ func TestFindConfigFile(t *testing.T) {
 	}
 }
 
+func TestFindConfigFileSkipsURL(t *testing.T) {
+	// Remote spec URLs must never be treated as local directories
+	for _, url := range []string{
+		"https://petstore3.swagger.io/api/v3/openapi.json",
+		"http://example.com/spec.yaml",
+	} {
+		if got := config.FindConfigFile(url); got != "" {
+			t.Errorf("FindConfigFile(%q) = %q, want empty", url, got)
+		}
+	}
+}
+
+func TestLoadFileRemoteSpecURL(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "beaver.yaml")
+
+	content := "spec: https://petstore3.swagger.io/api/v3/openapi.json\noutput: ./generated\n"
+	if err := os.WriteFile(cfgPath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := config.LoadFile(cfgPath)
+	if err != nil {
+		t.Fatalf("LoadFile failed: %v", err)
+	}
+
+	// The URL must be preserved as-is, not joined with baseDir
+	want := "https://petstore3.swagger.io/api/v3/openapi.json"
+	if cfg.SpecPath != want {
+		t.Errorf("SpecPath: got %q, want %q", cfg.SpecPath, want)
+	}
+	// Local output path should still be resolved relative to config dir
+	if want := filepath.Join(dir, "generated"); cfg.OutputDir != want {
+		t.Errorf("OutputDir: got %q, want %q", cfg.OutputDir, want)
+	}
+}
+
 func TestMerge(t *testing.T) {
 	base := &core.Config{
 		SpecPath:  "base.yaml",
