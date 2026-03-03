@@ -58,24 +58,37 @@ type RateLimiter struct {
 	max      int
 	refill   int
 	interval time.Duration
+	stop     chan struct{}
 }
 
 // NewRateLimiter creates a limiter: max tokens, refilling refillCount every interval.
+// Call Stop() when the server shuts down to release the background goroutine.
 // Example: NewRateLimiter(100, 10, time.Second) — 100 max capacity, +10 tokens/second.
 func NewRateLimiter(max, refillCount int, interval time.Duration) *RateLimiter {
-	rl := &RateLimiter{tokens: max, max: max, refill: refillCount, interval: interval}
+	rl := &RateLimiter{tokens: max, max: max, refill: refillCount, interval: interval, stop: make(chan struct{})}
 	go rl.refillLoop()
 	return rl
 }
 
+// Stop terminates the background refill goroutine. Call this when shutting down.
+func (rl *RateLimiter) Stop() {
+	close(rl.stop)
+}
+
 func (rl *RateLimiter) refillLoop() {
 	ticker := time.NewTicker(rl.interval)
-	for range ticker.C {
-		rl.mu.Lock()
-		if rl.tokens < rl.max {
-			rl.tokens = min(rl.max, rl.tokens+rl.refill)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			rl.mu.Lock()
+			if rl.tokens < rl.max {
+				rl.tokens = min(rl.max, rl.tokens+rl.refill)
+			}
+			rl.mu.Unlock()
+		case <-rl.stop:
+			return
 		}
-		rl.mu.Unlock()
 	}
 }
 

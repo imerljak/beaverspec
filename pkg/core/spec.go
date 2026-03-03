@@ -125,13 +125,15 @@ type Property struct {
 	Deprecated bool        // Deprecated field
 
 	// Constraints
-	Pattern   string
-	MinLength *int
-	MaxLength *int
-	Minimum   *float64
-	Maximum   *float64
-	MinItems  *int
-	MaxItems  *int
+	Pattern     string
+	MinLength   *int
+	MaxLength   *int
+	Minimum     *float64
+	Maximum     *float64
+	MinItems    *int
+	MaxItems    *int
+	UniqueItems bool
+	MultipleOf  *float64
 
 	// For nested types
 	RefType string // Referenced type name (for $ref or nested objects)

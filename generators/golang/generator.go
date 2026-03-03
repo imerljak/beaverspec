@@ -58,6 +58,10 @@ type PropertyData struct {
 	Minimum           *float64
 	Maximum           *float64
 	Pattern           string
+	MinItems          *int
+	MaxItems          *int
+	UniqueItems       bool
+	MultipleOf        *float64
 	EnumValues        []string
 	HasEnum           bool
 	HasValidation     bool // true if any constraint is present
@@ -440,6 +444,7 @@ func (g *Generator) convertEndpointsToClient(endpoints []core.Endpoint, security
 		}
 		if op.IsFormBody {
 			imports.Add("strings")
+			imports.Add("encoding/json")
 		}
 	}
 
@@ -872,6 +877,7 @@ func (g *Generator) convertProperties(props []core.Property, modelName string) [
 			p.MinLength != nil, p.MaxLength != nil,
 			p.Minimum != nil, p.Maximum != nil,
 			p.Pattern != "", len(p.Enum) > 0, p.Required && zeroExpr != "",
+			p.MinItems != nil, p.MaxItems != nil, p.UniqueItems, p.MultipleOf,
 		) || isFormatValidated
 
 		result = append(result, PropertyData{
@@ -893,6 +899,10 @@ func (g *Generator) convertProperties(props []core.Property, modelName string) [
 			Minimum:           p.Minimum,
 			Maximum:           p.Maximum,
 			Pattern:           p.Pattern,
+			MinItems:          p.MinItems,
+			MaxItems:          p.MaxItems,
+			UniqueItems:       p.UniqueItems,
+			MultipleOf:        p.MultipleOf,
 			EnumValues:        enumVals,
 			HasEnum:           len(p.Enum) > 0,
 			HasValidation:     hasValidation,
@@ -1039,11 +1049,23 @@ func (g *Generator) collectImports(models []ModelData) []string {
 			if strings.Contains(prop.Type, "time.Time") {
 				importsNeeded["time"] = true
 			}
-			if prop.IsFormatValidated && (prop.Format == "date-time" || prop.Format == "date") {
-				importsNeeded["time"] = true
+			if prop.IsFormatValidated {
+				switch prop.Format {
+				case "date-time", "date":
+					importsNeeded["time"] = true
+				case "email":
+					importsNeeded["net/mail"] = true
+				case "uri", "url":
+					importsNeeded["net/url"] = true
+				case "uuid", "hostname":
+					importsNeeded["regexp"] = true
+				}
 			}
 			if prop.Pattern != "" {
 				importsNeeded["regexp"] = true
+			}
+			if prop.MultipleOf != nil {
+				importsNeeded["math"] = true
 			}
 		}
 	}

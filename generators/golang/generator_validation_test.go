@@ -100,9 +100,13 @@ func TestGeneratorValidation(t *testing.T) {
 			if !strings.Contains(content, "is not a valid enum value") {
 				t.Error("Missing enum validation")
 			}
-			// Format validation (email uses regexp)
-			if !strings.Contains(content, "regexp.MatchString") {
-				t.Error("Missing format validation (regexp)")
+			// Format validation (email uses net/mail)
+			if !strings.Contains(content, "mail.ParseAddress") {
+				t.Error("Missing format validation for email (mail.ParseAddress)")
+			}
+			// net/mail import should be present
+			if !strings.Contains(content, `"net/mail"`) {
+				t.Error("Missing net/mail import for email format validation")
 			}
 			// Validator interface
 			if !strings.Contains(content, "type Validator interface") {
@@ -162,6 +166,66 @@ func TestGeneratorClientValidation(t *testing.T) {
 			}
 			if !strings.Contains(content, "validation:") {
 				t.Error("Client missing validation error wrapping")
+			}
+		}
+	}
+}
+
+func TestGeneratorArrayConstraints(t *testing.T) {
+	gen := NewGenerator()
+
+	minItems := 1
+	maxItems := 10
+	multipleOf := 5.0
+
+	spec := &core.Spec{
+		Models: []core.Model{
+			{
+				Name: "BatchRequest",
+				Properties: []core.Property{
+					{
+						Name:        "ids",
+						Type:        "array",
+						MinItems:    &minItems,
+						MaxItems:    &maxItems,
+						UniqueItems: true,
+					},
+					{
+						Name:       "quantity",
+						Type:       "integer",
+						MultipleOf: &multipleOf,
+					},
+				},
+			},
+		},
+	}
+
+	originalWd, _ := os.Getwd()
+	os.Chdir("../../")
+	defer os.Chdir(originalWd)
+
+	result, err := gen.Generate(spec, &core.Config{OutputDir: "generated"})
+	if err != nil {
+		t.Fatalf("Generation failed: %v", err)
+	}
+
+	for _, f := range result.Files {
+		if f.Path == "models/models.go" {
+			content := string(f.Content)
+			if !strings.Contains(content, "array must have at least") {
+				t.Error("Missing minItems validation")
+			}
+			if !strings.Contains(content, "array must have at most") {
+				t.Error("Missing maxItems validation")
+			}
+			if !strings.Contains(content, "array items must be unique") {
+				t.Error("Missing uniqueItems validation")
+			}
+			if !strings.Contains(content, "must be a multiple of") {
+				t.Error("Missing multipleOf validation")
+			}
+			if !strings.Contains(content, `"math"`) {
+				t.Error("Missing math import for multipleOf")
 			}
 		}
 	}

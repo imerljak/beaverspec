@@ -29,6 +29,7 @@ func main() {
 
 	// Custom middleware from generated server package
 	limiter := server.NewRateLimiter(100, 10, time.Second)
+	defer limiter.Stop()
 	r.Use(server.CORSMiddleware)
 	r.Use(limiter.Middleware)
 {{ if .HealthCheck }}

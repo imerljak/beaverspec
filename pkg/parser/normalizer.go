@@ -687,6 +687,38 @@ func (n *Normalizer) extractPropertiesWithNested(props openapi3.Schemas, require
 			inlineEnum = prop.Enum
 		}
 
+		// Extract validation constraints
+		var minLen, maxLen, minItems, maxItems *int
+		var minimum, maximum, multipleOf *float64
+		if prop.MinLength != 0 {
+			v := int(prop.MinLength)
+			minLen = &v
+		}
+		if prop.MaxLength != nil {
+			v := int(*prop.MaxLength)
+			maxLen = &v
+		}
+		if prop.Min != nil {
+			v := *prop.Min
+			minimum = &v
+		}
+		if prop.Max != nil {
+			v := *prop.Max
+			maximum = &v
+		}
+		if prop.MinItems != 0 {
+			v := int(prop.MinItems)
+			minItems = &v
+		}
+		if prop.MaxItems != nil {
+			v := int(*prop.MaxItems)
+			maxItems = &v
+		}
+		if prop.MultipleOf != nil {
+			v := *prop.MultipleOf
+			multipleOf = &v
+		}
+
 		property := core.Property{
 			Name:        name,
 			Type:        propType,
@@ -705,6 +737,16 @@ func (n *Normalizer) extractPropertiesWithNested(props openapi3.Schemas, require
 			ReadOnly:   prop.ReadOnly,
 			WriteOnly:  prop.WriteOnly,
 			Deprecated: prop.Deprecated,
+
+			Pattern:     prop.Pattern,
+			MinLength:   minLen,
+			MaxLength:   maxLen,
+			Minimum:     minimum,
+			Maximum:     maximum,
+			MinItems:    minItems,
+			MaxItems:    maxItems,
+			UniqueItems: prop.UniqueItems,
+			MultipleOf:  multipleOf,
 		}
 
 		// Still set Properties for backward compatibility, but RefType takes precedence

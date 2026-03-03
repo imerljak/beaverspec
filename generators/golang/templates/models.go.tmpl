@@ -19,8 +19,13 @@ type {{ .TypeName }} {{ .BaseType }}
 
 const (
 {{- $enumType := .TypeName }}
+{{- $baseType := .BaseType }}
 {{- range .Values }}
+{{- if eq $baseType "string" }}
     {{ .Name }} {{ $enumType }} = "{{ .Value }}"
+{{- else }}
+    {{ .Name }} {{ $enumType }} = {{ .Value }}
+{{- end }}
 {{- end }}
 )
 {{- end }}
@@ -128,12 +133,68 @@ func (m *{{ .Name }}) Validate() error {
         return fmt.Errorf("{{ .Name }}: value does not match required pattern")
     }
 {{- end }}
+{{- if .IsFormatValidated }}
+{{- if eq .Format "email" }}
+    if _, err := mail.ParseAddress(m.{{ .Name | toPascalCase }}); err != nil {
+        return fmt.Errorf("{{ .Name }}: invalid email address: %w", err)
+    }
+{{- else if eq .Format "uuid" }}
+    if matched, _ := regexp.MatchString(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`, m.{{ .Name | toPascalCase }}); !matched {
+        return fmt.Errorf("{{ .Name }}: invalid UUID format")
+    }
+{{- else if eq .Format "date-time" }}
+    if _, err := time.Parse(time.RFC3339, m.{{ .Name | toPascalCase }}); err != nil {
+        if _, err2 := time.Parse(time.RFC3339Nano, m.{{ .Name | toPascalCase }}); err2 != nil {
+            return fmt.Errorf("{{ .Name }}: invalid date-time format (RFC 3339 required)")
+        }
+    }
+{{- else if eq .Format "date" }}
+    if _, err := time.Parse("2006-01-02", m.{{ .Name | toPascalCase }}); err != nil {
+        return fmt.Errorf("{{ .Name }}: invalid date format (YYYY-MM-DD required)")
+    }
+{{- else if or (eq .Format "uri") (eq .Format "url") }}
+    if u, err := url.ParseRequestURI(m.{{ .Name | toPascalCase }}); err != nil || u.Scheme == "" {
+        return fmt.Errorf("{{ .Name }}: invalid URI/URL")
+    }
+{{- else if eq .Format "hostname" }}
+    if len(m.{{ .Name | toPascalCase }}) > 253 {
+        return fmt.Errorf("{{ .Name }}: hostname exceeds maximum length")
+    }
+{{- end }}
+{{- end }}
 {{- if .HasEnum }}
     switch m.{{ .Name | toPascalCase }} {
     case {{ range $i, $v := .EnumValues }}{{ if $i }}, {{ end }}"{{ $v }}"{{ end }}:
         // valid
     default:
         return fmt.Errorf("{{ .Name }}: value %v is not a valid enum value", m.{{ .Name | toPascalCase }})
+    }
+{{- end }}
+{{- if .MinItems }}
+    if len(m.{{ .Name | toPascalCase }}) < {{ deref .MinItems }} {
+        return fmt.Errorf("{{ .Name }}: array must have at least {{ deref .MinItems }} items")
+    }
+{{- end }}
+{{- if .MaxItems }}
+    if len(m.{{ .Name | toPascalCase }}) > {{ deref .MaxItems }} {
+        return fmt.Errorf("{{ .Name }}: array must have at most {{ deref .MaxItems }} items")
+    }
+{{- end }}
+{{- if .UniqueItems }}
+    {
+        seen{{ .Name | toPascalCase }} := make(map[string]bool)
+        for _, item := range m.{{ .Name | toPascalCase }} {
+            key := fmt.Sprintf("%v", item)
+            if seen{{ .Name | toPascalCase }}[key] {
+                return fmt.Errorf("{{ .Name }}: array items must be unique")
+            }
+            seen{{ .Name | toPascalCase }}[key] = true
+        }
+    }
+{{- end }}
+{{- if .MultipleOf }}
+    if math.Mod(float64(m.{{ .Name | toPascalCase }}), {{ derefF .MultipleOf }}) != 0 {
+        return fmt.Errorf("{{ .Name }}: value must be a multiple of {{ derefF .MultipleOf }}")
     }
 {{- end }}
 {{- end }}
