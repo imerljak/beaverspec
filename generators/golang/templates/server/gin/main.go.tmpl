@@ -26,7 +26,12 @@ func main() {
 	server.RegisterHealthRoutes(r)
 {{ end }}
 	// Route groups — replace Mock* with your real implementations
-{{ range .Handlers }}	server.Register{{ .Name }}Routes(r, &server.Mock{{ .Name }}Handler{})
+{{ range .Handlers }}	server.Register{{ .Name }}Routes(r, &server.{{ .Name }}Server{
+		Handler: &server.Mock{{ .Name }}Handler{},
+{{- range $.SecuritySchemes }}
+		{{ .Name | toPascalCase }}: &server.Mock{{ .Name | toPascalCase }}AuthMiddleware{},
+{{- end }}
+	})
 {{ end }}
 	srv := &http.Server{
 		Addr:         ":8080",

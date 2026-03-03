@@ -27,7 +27,8 @@ type Tag struct {
 type SecurityScheme struct {
 	Type             string // "apiKey", "http", "oauth2", "openIdConnect"
 	Description      string
-	Name             string // For apiKey: header/query/cookie name
+	Name             string // Scheme identifier (map key from spec, e.g. "bearerAuth")
+	ParameterName    string // For apiKey: header/query/cookie parameter name (e.g. "X-API-Key")
 	In               string // For apiKey: "header", "query", "cookie"
 	Scheme           string // For http: "bearer", "basic", etc.
 	BearerFormat     string // For http bearer
@@ -146,6 +147,15 @@ type Property struct {
 	AdditionalProperties *Property
 
 	Example interface{}
+}
+
+// HasConstraints returns true if the property has any spec-defined validation constraints.
+func (p Property) HasConstraints() bool {
+	return p.MinLength != nil || p.MaxLength != nil ||
+		p.Minimum != nil || p.Maximum != nil ||
+		p.Pattern != "" || len(p.Enum) > 0 ||
+		p.MinItems != nil || p.MaxItems != nil ||
+		p.UniqueItems || p.MultipleOf != nil
 }
 
 type Discriminator struct {

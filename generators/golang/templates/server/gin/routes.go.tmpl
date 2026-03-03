@@ -10,10 +10,9 @@ import (
 
 {{ range .Handlers }}
 // Register{{ .Name }}Routes registers the {{ .Name }} routes on the provided Gin engine
-func Register{{ .Name }}Routes(r *gin.Engine, handler {{ .Name }}Handler) {
-    server := &{{ .Name }}Server{Handler: handler}
+func Register{{ .Name }}Routes(r *gin.Engine, srv *{{ .Name }}Server) {
 	{{- range .Operations }}
-    r.{{ .Method | toPascalCase }}("{{ .Path | toColonParams }}", server.{{ .Name }})
+    r.{{ .Method | toPascalCase }}("{{ .Path | toColonParams }}", srv.{{ .Name }})
 	{{- end }}
 }
 {{- end }}

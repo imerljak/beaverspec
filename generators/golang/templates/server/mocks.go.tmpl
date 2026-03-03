@@ -18,3 +18,24 @@ func (m *Mock{{ $handlerName }}Handler) {{ .Name }}(ctx context.Context{{ if .Ha
 }
 {{ end }}
 {{ end }}
+{{- range .SecuritySchemes }}
+// Mock{{ .Name | toPascalCase }}AuthMiddleware is a no-op implementation of {{ .Name | toPascalCase }}AuthMiddleware for testing.
+type Mock{{ .Name | toPascalCase }}AuthMiddleware struct{}
+{{- if .IsBearer }}
+func (m *Mock{{ .Name | toPascalCase }}AuthMiddleware) ValidateBearerToken(ctx context.Context, token string) (context.Context, error) {
+	return ctx, nil
+}
+{{- else if .IsBasicAuth }}
+func (m *Mock{{ .Name | toPascalCase }}AuthMiddleware) ValidateBasicAuth(ctx context.Context, username, password string) (context.Context, error) {
+	return ctx, nil
+}
+{{- else if .IsAPIKey }}
+func (m *Mock{{ .Name | toPascalCase }}AuthMiddleware) ValidateAPIKey(ctx context.Context, key string) (context.Context, error) {
+	return ctx, nil
+}
+{{- else if .IsOAuth2 }}
+func (m *Mock{{ .Name | toPascalCase }}AuthMiddleware) ValidateOAuth2Token(ctx context.Context, token string) (context.Context, error) {
+	return ctx, nil
+}
+{{- end }}
+{{- end }}

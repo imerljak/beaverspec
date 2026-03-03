@@ -30,7 +30,12 @@ func main() {
 	server.RegisterHealthRoutes(e)
 {{ end }}
 	// Route groups — replace Mock* with your real implementations
-{{ range .Handlers }}	server.Register{{ .Name }}Routes(e, &server.Mock{{ .Name }}Handler{})
+{{ range .Handlers }}	server.Register{{ .Name }}Routes(e, &server.{{ .Name }}Server{
+		Handler: &server.Mock{{ .Name }}Handler{},
+{{- range $.SecuritySchemes }}
+		{{ .Name | toPascalCase }}: &server.Mock{{ .Name | toPascalCase }}AuthMiddleware{},
+{{- end }}
+	})
 {{ end }}
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)

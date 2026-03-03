@@ -13,6 +13,7 @@ type Endpoint struct {
 	Responses   []Response
 
 	Security     []SecurityRequirement
+	IsPublic     bool // true when security: [] is set explicitly (no auth required)
 	IsDeprecated bool
 }
 

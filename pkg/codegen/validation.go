@@ -23,11 +23,6 @@ func IsFormatValidated(format string) bool {
 	return validatedFormats[format]
 }
 
-// HasConstraints returns true if the property has any validation constraints defined.
-func HasConstraints(hasMinLength, hasMaxLength, hasMinimum, hasMaximum, hasPattern, hasEnum, isRequired, hasMinItems, hasMaxItems, uniqueItems bool, multipleOf *float64) bool {
-	return hasMinLength || hasMaxLength || hasMinimum || hasMaximum || hasPattern || hasEnum || isRequired || hasMinItems || hasMaxItems || uniqueItems || multipleOf != nil
-}
-
 // ValidateEmail returns true if the value is a valid email address (RFC 5322).
 func ValidateEmail(v string) bool {
 	_, err := mail.ParseAddress(v)

@@ -43,7 +43,7 @@ func TestExtractMediaTypes(t *testing.T) {
 		),
 	}
 
-	endpoints := n.extractEndpoints(doc.Paths)
+	endpoints := n.extractEndpoints(doc.Paths, doc.Security)
 	if len(endpoints) != 1 {
 		t.Fatalf("expected 1 endpoint, got %d", len(endpoints))
 	}

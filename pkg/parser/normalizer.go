@@ -48,7 +48,7 @@ func (n *Normalizer) Normalize(doc *openapi3.T) (*core.Spec, error) {
 		Version:     doc.OpenAPI,
 		Info:        n.extractInfo(doc.Info),
 		Models:      models,
-		Endpoints:   n.extractEndpoints(doc.Paths),
+		Endpoints:   n.extractEndpoints(doc.Paths, doc.Security),
 		Tags:        n.extractTags(doc.Tags),
 		SecurityDef: securityDef,
 	}
@@ -65,6 +65,7 @@ func (n *Normalizer) extractSecuritySchemes(schemes openapi3.SecuritySchemes) []
 		s := ref.Value
 		scheme := core.SecurityScheme{
 			Name:             name,
+			ParameterName:    s.Name, // apiKey: the actual header/query/cookie parameter name
 			Type:             string(s.Type),
 			Description:      s.Description,
 			In:               string(s.In),
@@ -115,8 +116,10 @@ func (n *Normalizer) extractOAuthFlows(flows *openapi3.OAuthFlows) *core.OAuthFl
 	return of
 }
 
-// extractEndpoints converts openapi3.Paths into []core.Endpoint
-func (n *Normalizer) extractEndpoints(paths *openapi3.Paths) []core.Endpoint {
+// extractEndpoints converts openapi3.Paths into []core.Endpoint.
+// globalSecurity is the top-level security requirements from the spec (applied when an
+// operation does not define its own security override).
+func (n *Normalizer) extractEndpoints(paths *openapi3.Paths, globalSecurity openapi3.SecurityRequirements) []core.Endpoint {
 	var endpoints []core.Endpoint
 
 	for path, pathItem := range paths.Map() {
@@ -140,6 +143,19 @@ func (n *Normalizer) extractEndpoints(paths *openapi3.Paths) []core.Endpoint {
 				continue
 			}
 
+			// Resolve security: nil = inherit global, empty = explicitly public
+			var security []core.SecurityRequirement
+			var isPublic bool
+			if operation.Security == nil {
+				// No operation-level override: use global security
+				security = n.extractSecurityRequirements(&globalSecurity)
+			} else if len(*operation.Security) == 0 {
+				// Explicitly security: [] — no authentication required
+				isPublic = true
+			} else {
+				security = n.extractSecurityRequirements(operation.Security)
+			}
+
 			endpoint := core.Endpoint{
 				Path:         path,
 				Method:       method,
@@ -150,7 +166,8 @@ func (n *Normalizer) extractEndpoints(paths *openapi3.Paths) []core.Endpoint {
 				Parameters:   n.extractParameters(operation.Parameters, pathItem.Parameters),
 				RequestBody:  n.extractRequestBody(operation.RequestBody),
 				Responses:    n.extractResponses(operation.Responses),
-				Security:     n.extractSecurityRequirements(operation.Security),
+				Security:     security,
+				IsPublic:     isPublic,
 				IsDeprecated: operation.Deprecated,
 			}
 

@@ -4,6 +4,9 @@ package {{ .PackageName }}
 import (
 	"errors"
 	"net/http"
+{{- if .SecuritySchemes }}
+	"strings"
+{{- end }}
 	"{{ .ModelsPackage }}"
 	"github.com/labstack/echo/v4"
 )
@@ -12,11 +15,50 @@ import (
 // {{ $handler.Name }}Server Wrapper
 type {{ $handler.Name }}Server struct {
 	Handler {{ $handler.Name }}Handler
+{{- range $.SecuritySchemes }}
+	{{ .Name | toPascalCase }} {{ .Name | toPascalCase }}AuthMiddleware
+{{- end }}
 }
 
 {{- range .Operations }}
 // {{ .Name }} Echo Handler
 func (s *{{ $handler.Name }}Server) {{ .Name }}(c echo.Context) error {
+    {{- if .HasSecurity }}
+	// Enforce security requirements
+	ctx := c.Request().Context()
+	{{- range .Security }}
+	if s.{{ .SchemeName | toPascalCase }} != nil {
+		{{- if .IsBearer }}
+		token := strings.TrimPrefix(c.Request().Header.Get("Authorization"), "Bearer ")
+		var authErr error
+		ctx, authErr = s.{{ .SchemeName | toPascalCase }}.ValidateBearerToken(ctx, token)
+		{{- else if .IsBasicAuth }}
+		username, password, _ := c.Request().BasicAuth()
+		var authErr error
+		ctx, authErr = s.{{ .SchemeName | toPascalCase }}.ValidateBasicAuth(ctx, username, password)
+		{{- else if .IsAPIKey }}
+		{{- if eq .APIKeyIn "query" }}
+		key := c.QueryParam("{{ .APIKeyName }}")
+		{{- else if eq .APIKeyIn "cookie" }}
+		key := ""
+		if cookie, cookieErr := c.Cookie("{{ .APIKeyName }}"); cookieErr == nil { key = cookie.Value }
+		{{- else }}
+		key := c.Request().Header.Get("{{ .APIKeyName }}")
+		{{- end }}
+		var authErr error
+		ctx, authErr = s.{{ .SchemeName | toPascalCase }}.ValidateAPIKey(ctx, key)
+		{{- else if .IsOAuth2 }}
+		token := strings.TrimPrefix(c.Request().Header.Get("Authorization"), "Bearer ")
+		var authErr error
+		ctx, authErr = s.{{ .SchemeName | toPascalCase }}.ValidateOAuth2Token(ctx, token)
+		{{- end }}
+		if authErr != nil {
+			return echo.NewHTTPError(http.StatusUnauthorized, "Unauthorized")
+		}
+	}
+	{{- end }}
+	c.SetRequest(c.Request().WithContext(ctx))
+	{{- end }}
     {{ if .HasBody }}
 	var req {{ .BodyType }}
     if err := c.Bind(&req); err != nil {

@@ -7,10 +7,9 @@ import (
 
 {{ range .Handlers }}
 // Register{{ .Name }}Routes registers the {{ .Name }} routes on the provided mux
-func Register{{ .Name }}Routes(mux *http.ServeMux, handler {{ .Name }}Handler) {
-    server := &{{ .Name }}Server{Handler: handler}
+func Register{{ .Name }}Routes(mux *http.ServeMux, srv *{{ .Name }}Server) {
 	{{- range .Operations }}
-    mux.HandleFunc("{{ .Method }} {{ .Path }}", server.{{ .Name }})
+    mux.HandleFunc("{{ .Method }} {{ .Path }}", srv.{{ .Name }})
 	{{- end }}
 }
 {{- end }}

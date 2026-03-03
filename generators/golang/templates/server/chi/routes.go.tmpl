@@ -10,10 +10,9 @@ import (
 
 {{ range .Handlers }}
 // Register{{ .Name }}Routes registers the {{ .Name }} routes on the provided Chi router
-func Register{{ .Name }}Routes(r chi.Router, handler {{ .Name }}Handler) {
-    server := &{{ .Name }}Server{Handler: handler}
+func Register{{ .Name }}Routes(r chi.Router, srv *{{ .Name }}Server) {
 	{{- range .Operations }}
-    r.{{ .Method | toPascalCase }}("{{ .Path }}", server.{{ .Name }})
+    r.{{ .Method | toPascalCase }}("{{ .Path }}", srv.{{ .Name }})
 	{{- end }}
 }
 {{- end }}

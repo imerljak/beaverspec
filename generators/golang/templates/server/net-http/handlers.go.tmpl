@@ -13,11 +13,51 @@ import (
 // {{ $handler.Name }}Server Wrapper
 type {{ $handler.Name }}Server struct {
 	Handler {{ $handler.Name }}Handler
+{{- range $.SecuritySchemes }}
+	{{ .Name | toPascalCase }} {{ .Name | toPascalCase }}AuthMiddleware
+{{- end }}
 }
 
 {{- range .Operations }}
 // {{ .Name }} HTTP Handler
 func (s *{{ $handler.Name }}Server) {{ .Name }}(w http.ResponseWriter, r *http.Request) {
+    {{- if .HasSecurity }}
+	// Enforce security requirements
+	ctx := r.Context()
+	{{- range .Security }}
+	if s.{{ .SchemeName | toPascalCase }} != nil {
+		{{- if .IsBearer }}
+		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		var authErr error
+		ctx, authErr = s.{{ .SchemeName | toPascalCase }}.ValidateBearerToken(ctx, token)
+		{{- else if .IsBasicAuth }}
+		username, password, _ := r.BasicAuth()
+		var authErr error
+		ctx, authErr = s.{{ .SchemeName | toPascalCase }}.ValidateBasicAuth(ctx, username, password)
+		{{- else if .IsAPIKey }}
+		{{- if eq .APIKeyIn "query" }}
+		key := r.URL.Query().Get("{{ .APIKeyName }}")
+		{{- else if eq .APIKeyIn "cookie" }}
+		key := ""
+		if c, cookieErr := r.Cookie("{{ .APIKeyName }}"); cookieErr == nil { key = c.Value }
+		{{- else }}
+		key := r.Header.Get("{{ .APIKeyName }}")
+		{{- end }}
+		var authErr error
+		ctx, authErr = s.{{ .SchemeName | toPascalCase }}.ValidateAPIKey(ctx, key)
+		{{- else if .IsOAuth2 }}
+		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		var authErr error
+		ctx, authErr = s.{{ .SchemeName | toPascalCase }}.ValidateOAuth2Token(ctx, token)
+		{{- end }}
+		if authErr != nil {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+	}
+	{{- end }}
+	r = r.WithContext(ctx)
+	{{- end }}
     {{ if .HasBody }}
 	var req {{ .BodyType }}
 	{{ if .IsXMLBody }}

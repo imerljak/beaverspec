@@ -126,6 +126,18 @@ type HandlerGroup struct {
 	Operations []OperationData
 }
 
+// SecurityRequirementData contains all info needed to enforce one security scheme in generated code
+type SecurityRequirementData struct {
+	SchemeName  string   // scheme identifier, e.g. "bearerAuth" — used as Go field name base
+	Scopes      []string // OAuth2 scopes (informational)
+	IsBearer    bool
+	IsBasicAuth bool
+	IsAPIKey    bool
+	IsOAuth2    bool
+	APIKeyIn    string // "header", "query", "cookie" for apiKey
+	APIKeyName  string // parameter name for apiKey (e.g. "X-API-Key")
+}
+
 // OperationData represents a single client/server operation
 type OperationData struct {
 	Name            string // Method name (e.g., "ListPets")
@@ -136,7 +148,8 @@ type OperationData struct {
 	PathParams      []ParamData
 	QueryParams     []ParamData
 	HeaderParams    []ParamData
-	Security        []string // Security requirement names for this operation
+	Security        []SecurityRequirementData // security schemes required for this operation
+	HasSecurity     bool                      // true if Security is non-empty
 	HasBody         bool
 	BodyType        string // Type of request body
 	Responses       []ResponseData
@@ -419,10 +432,13 @@ func (g *Generator) convertEndpointsToClient(endpoints []core.Endpoint, security
 	imports.Add("fmt")
 	imports.Add("io")
 
+	schemes := g.convertSecuritySchemes(securityDef)
+	schemesMap := schemesByName(schemes)
+
 	operations := make([]OperationData, 0, len(endpoints))
 
 	for _, ep := range endpoints {
-		op := g.convertEndpoint(ep)
+		op := g.convertEndpoint(ep, schemesMap)
 		operations = append(operations, op)
 
 		if op.IsJSONBody {
@@ -455,7 +471,7 @@ func (g *Generator) convertEndpointsToClient(endpoints []core.Endpoint, security
 		InterfaceName:   "Client",
 		Operations:      operations,
 		Imports:         imports.GetImports(),
-		SecuritySchemes: g.convertSecuritySchemes(securityDef),
+		SecuritySchemes: schemes,
 	}
 }
 
@@ -487,10 +503,18 @@ func (g *Generator) convertEndpointsToServer(endpoints []core.Endpoint, security
 	imports.Add("net/http")
 	imports.Add("errors")
 
+	schemes := g.convertSecuritySchemes(securityDef)
+	schemesMap := schemesByName(schemes)
+
+	// Add strings import when auth enforcement code will be emitted
+	if len(schemes) > 0 {
+		imports.Add("strings")
+	}
+
 	groupsMap := make(map[string][]OperationData)
 
 	for _, ep := range endpoints {
-		op := g.convertEndpoint(ep)
+		op := g.convertEndpoint(ep, schemesMap)
 
 		// Group by first tag if present, else "Default"
 		groupName := "Default"
@@ -537,7 +561,7 @@ func (g *Generator) convertEndpointsToServer(endpoints []core.Endpoint, security
 		ModelsPackage:   modulePath + "/models",
 		ModulePath:      modulePath,
 		Handlers:        handlers,
-		SecuritySchemes: g.convertSecuritySchemes(securityDef),
+		SecuritySchemes: schemes,
 		HealthCheck:     healthCheck,
 	}
 }
@@ -550,7 +574,7 @@ func (g *Generator) convertSecuritySchemes(schemes []core.SecurityScheme) []Secu
 			Name:        s.Name,
 			Type:        s.Type,
 			In:          s.In,
-			KeyName:     s.Name, // For apiKey, Name doubles as parameter name
+			KeyName:     s.ParameterName, // apiKey: actual header/query/cookie parameter name
 			Scheme:      s.Scheme,
 			IsAPIKey:    codegen.IsAPIKey(s.Type),
 			IsBearer:    codegen.IsHTTP(s.Type) && codegen.IsBearer(s.Scheme),
@@ -561,8 +585,18 @@ func (g *Generator) convertSecuritySchemes(schemes []core.SecurityScheme) []Secu
 	return result
 }
 
-// convertEndpoint converts a single endpoint to operation data
-func (g *Generator) convertEndpoint(ep core.Endpoint) OperationData {
+// schemesByName builds a lookup map from scheme identifier → SecuritySchemeData
+func schemesByName(schemes []SecuritySchemeData) map[string]SecuritySchemeData {
+	m := make(map[string]SecuritySchemeData, len(schemes))
+	for _, s := range schemes {
+		m[s.Name] = s
+	}
+	return m
+}
+
+// convertEndpoint converts a single endpoint to operation data.
+// schemes is a map from scheme identifier to SecuritySchemeData for resolving security requirements.
+func (g *Generator) convertEndpoint(ep core.Endpoint, schemes map[string]SecuritySchemeData) OperationData {
 	// Generate method name from operation ID
 	methodName := g.toMethodName(ep.OperationID)
 
@@ -585,6 +619,25 @@ func (g *Generator) convertEndpoint(ep core.Endpoint) OperationData {
 		}
 	}
 
+	// Resolve security requirements to scheme details
+	var security []SecurityRequirementData
+	for _, req := range ep.Security {
+		scheme, ok := schemes[req.Name]
+		if !ok {
+			continue
+		}
+		security = append(security, SecurityRequirementData{
+			SchemeName:  req.Name,
+			Scopes:      req.Scopes,
+			IsBearer:    scheme.IsBearer,
+			IsBasicAuth: scheme.IsBasicAuth,
+			IsAPIKey:    scheme.IsAPIKey,
+			IsOAuth2:    scheme.IsOAuth2,
+			APIKeyIn:    scheme.In,
+			APIKeyName:  scheme.KeyName,
+		})
+	}
+
 	return OperationData{
 		Name:            methodName,
 		OperationID:     ep.OperationID,
@@ -594,6 +647,8 @@ func (g *Generator) convertEndpoint(ep core.Endpoint) OperationData {
 		PathParams:      paramMap["path"],
 		QueryParams:     paramMap["query"],
 		HeaderParams:    paramMap["header"],
+		Security:        security,
+		HasSecurity:     len(security) > 0,
 		HasBody:         bodyType != "",
 		BodyType:        bodyType,
 		Responses:       responsesData,
@@ -873,12 +928,7 @@ func (g *Generator) convertProperties(props []core.Property, modelName string) [
 		isFormatValidated := codegen.IsFormatValidated(p.Format)
 		goType := g.mapType(p, modelName)
 		zeroExpr := zeroCheckExpr(p, goType)
-		hasValidation := codegen.HasConstraints(
-			p.MinLength != nil, p.MaxLength != nil,
-			p.Minimum != nil, p.Maximum != nil,
-			p.Pattern != "", len(p.Enum) > 0, p.Required && zeroExpr != "",
-			p.MinItems != nil, p.MaxItems != nil, p.UniqueItems, p.MultipleOf,
-		) || isFormatValidated
+		hasValidation := p.HasConstraints() || (p.Required && zeroExpr != "") || isFormatValidated
 
 		result = append(result, PropertyData{
 			Name:        p.Name,
