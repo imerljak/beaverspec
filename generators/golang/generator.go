@@ -3,6 +3,7 @@ package golang
 import (
 	"fmt"
 	"go/format"
+	"os"
 	"sort"
 	"strings"
 
@@ -12,7 +13,7 @@ import (
 )
 
 type Generator struct {
-	//
+	typeOverrides []core.TypeOverride // custom format/type → Go type mappings from config
 }
 
 // ModelData is the data passed to model templates
@@ -216,7 +217,16 @@ func (g *Generator) Generate(spec *core.Spec, config *core.Config) (*core.Genera
 	}
 	baseDir := config.OutputDir // e.g., "generated"
 
-	models := g.convertModels(spec.Models)
+	// Apply type overrides from config (used by mapPrimitiveType)
+	g.typeOverrides = config.Types.Overrides
+
+	// Determine what to generate — all-false means "generate everything"
+	gen := config.Generate
+	if !gen.Models && !gen.Client && !gen.Server && !gen.Validation {
+		gen.Models, gen.Client, gen.Server = true, true, true
+	}
+
+	models := g.convertModels(spec.Models, config.Exclude.Models)
 
 	templateData := TemplateData{
 		PackageName: packageName,
@@ -228,109 +238,114 @@ func (g *Generator) Generate(spec *core.Spec, config *core.Config) (*core.Genera
 	// Create template engine
 	engine := template.NewGoTemplateEngine()
 
-	// Load templates from the templates dir
-	// For now, we need to know where templates are
-	// Afterwards this will come from config/embed
+	// Load built-in templates
 	templatesPath := "./generators/golang/templates"
-
 	if err := engine.Load(templatesPath); err != nil {
 		return nil, fmt.Errorf("failed to load templates: %w", err)
 	}
 
-	// Render the models template
-	content, err := engine.Render("models.go.tmpl", templateData)
-	if err != nil {
-		return nil, fmt.Errorf("failed to render models template: %w", err)
+	// Apply user template CustomDir (supplements/overrides built-ins by name)
+	if config.Templates.CustomDir != "" {
+		if err := engine.Load(config.Templates.CustomDir); err != nil {
+			return nil, fmt.Errorf("failed to load custom templates from %s: %w", config.Templates.CustomDir, err)
+		}
 	}
 
-	formattedContent, err := format.Source([]byte(content))
-	if err != nil {
-		return nil, fmt.Errorf("failed to format models.go: %w", err)
+	// Apply per-template file overrides
+	for tmplName, filePath := range config.Templates.Overrides {
+		content, err := os.ReadFile(filePath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read template override %s: %w", filePath, err)
+		}
+		if err := engine.Override(tmplName, string(content)); err != nil {
+			return nil, fmt.Errorf("failed to override template %s: %w", tmplName, err)
+		}
 	}
 
-	// Render the test template
-	testContent, err := engine.Render("models_test.go.tmpl", templateData)
-	if err != nil {
-		return nil, fmt.Errorf("failed to render models template: %w", err)
+	var files []core.GeneratedFile
+
+	// Models
+	if gen.Models {
+		content, err := engine.Render("models.go.tmpl", templateData)
+		if err != nil {
+			return nil, fmt.Errorf("failed to render models template: %w", err)
+		}
+		formattedContent, err := format.Source([]byte(content))
+		if err != nil {
+			return nil, fmt.Errorf("failed to format models.go: %w", err)
+		}
+
+		testContent, err := engine.Render("models_test.go.tmpl", templateData)
+		if err != nil {
+			return nil, fmt.Errorf("failed to render models template: %w", err)
+		}
+		formattedTestContent, err := format.Source([]byte(testContent))
+		if err != nil {
+			return nil, fmt.Errorf("failed to format models_test.go: %w", err)
+		}
+
+		files = append(files,
+			core.GeneratedFile{Path: "models/models.go", Content: []byte(formattedContent)},
+			core.GeneratedFile{Path: "models/models_test.go", Content: []byte(formattedTestContent)},
+		)
 	}
 
-	formattedTestContent, err := format.Source([]byte(testContent))
-	if err != nil {
-		return nil, fmt.Errorf("failed to format models_test.go: %w", err)
-	}
-
-	files := []core.GeneratedFile{
-		{
-			Path:    "models/models.go",
-			Content: []byte(formattedContent),
-		},
-		{
-			Path:    "models/models_test.go",
-			Content: []byte(formattedTestContent),
-		},
-	}
-
-	// Generate client if there are endpoints
+	// Client and Server (only if there are endpoints after tag filtering)
 	if len(spec.Endpoints) > 0 {
-		clientData := g.convertEndpointsToClient(spec.Endpoints, spec.SecurityDef, modulePath, baseDir)
+		if gen.Client {
+			clientData := g.convertEndpointsToClient(spec.Endpoints, spec.SecurityDef, modulePath, baseDir, config.Exclude.Tags)
 
-		clientContent, err := engine.Render("client/client.go.tmpl", clientData)
-		if err != nil {
-			return nil, fmt.Errorf("failed to render client template: %w", err)
-		}
-
-		formattedClientContent, err := format.Source([]byte(clientContent))
-		if err != nil {
-			return nil, fmt.Errorf("failed to format client.go: %w", err)
-		}
-
-		files = append(files, core.GeneratedFile{
-			Path:    "client/client.go",
-			Content: formattedClientContent,
-		})
-
-		// Generate server logic
-		serverData := g.convertEndpointsToServer(spec.Endpoints, spec.SecurityDef, modulePath, baseDir)
-
-		// interface
-		serverInterfaceContent, err := engine.Render("server/interface.go.tmpl", serverData)
-		if err != nil {
-			return nil, fmt.Errorf("failed to render server interface: %w", err)
-		}
-		formattedInterface, err := format.Source([]byte(serverInterfaceContent))
-		if err != nil {
-			return nil, fmt.Errorf("failed to format server/interface.go: %w\ncontent:\n%s", err, serverInterfaceContent)
-		}
-		files = append(files, core.GeneratedFile{Path: "server/interface.go", Content: formattedInterface})
-
-		// mocks (shared, framework-agnostic)
-		serverMocksContent, err := engine.Render("server/mocks.go.tmpl", serverData)
-		if err != nil {
-			return nil, fmt.Errorf("failed to render server mocks: %w", err)
-		}
-		formattedMocks, err := format.Source([]byte(serverMocksContent))
-		if err != nil {
-			return nil, fmt.Errorf("failed to format server/mocks.go: %w\ncontent:\n%s", err, serverMocksContent)
-		}
-		files = append(files, core.GeneratedFile{Path: "server/mocks.go", Content: formattedMocks})
-
-		// handlers and routes are framework-specific (template layer)
-		serverHandlersContent, err := engine.Render("server/"+framework+"/handlers.go.tmpl", serverData)
-		if err != nil {
-			return nil, fmt.Errorf("failed to render server handlers: %w", err)
-		}
-		formattedHandlers, err := format.Source([]byte(serverHandlersContent))
-		if err == nil {
-			files = append(files, core.GeneratedFile{Path: "server/handlers.go", Content: formattedHandlers})
+			clientContent, err := engine.Render("client/client.go.tmpl", clientData)
+			if err != nil {
+				return nil, fmt.Errorf("failed to render client template: %w", err)
+			}
+			formattedClientContent, err := format.Source([]byte(clientContent))
+			if err != nil {
+				return nil, fmt.Errorf("failed to format client.go: %w", err)
+			}
+			files = append(files, core.GeneratedFile{Path: "client/client.go", Content: formattedClientContent})
 		}
 
-		serverRoutesContent, err := engine.Render("server/"+framework+"/routes.go.tmpl", serverData)
-		if err != nil {
-			return nil, fmt.Errorf("failed to render server routes: %w", err)
-		}
-		formattedRoutes, err := format.Source([]byte(serverRoutesContent))
-		if err == nil {
-			files = append(files, core.GeneratedFile{Path: "server/routes.go", Content: formattedRoutes})
+		if gen.Server {
+			serverData := g.convertEndpointsToServer(spec.Endpoints, spec.SecurityDef, modulePath, baseDir, config.Exclude.Tags)
+
+			serverInterfaceContent, err := engine.Render("server/interface.go.tmpl", serverData)
+			if err != nil {
+				return nil, fmt.Errorf("failed to render server interface: %w", err)
+			}
+			formattedInterface, err := format.Source([]byte(serverInterfaceContent))
+			if err != nil {
+				return nil, fmt.Errorf("failed to format server/interface.go: %w\ncontent:\n%s", err, serverInterfaceContent)
+			}
+			files = append(files, core.GeneratedFile{Path: "server/interface.go", Content: formattedInterface})
+
+			serverMocksContent, err := engine.Render("server/mocks.go.tmpl", serverData)
+			if err != nil {
+				return nil, fmt.Errorf("failed to render server mocks: %w", err)
+			}
+			formattedMocks, err := format.Source([]byte(serverMocksContent))
+			if err != nil {
+				return nil, fmt.Errorf("failed to format server/mocks.go: %w\ncontent:\n%s", err, serverMocksContent)
+			}
+			files = append(files, core.GeneratedFile{Path: "server/mocks.go", Content: formattedMocks})
+
+			serverHandlersContent, err := engine.Render("server/"+framework+"/handlers.go.tmpl", serverData)
+			if err != nil {
+				return nil, fmt.Errorf("failed to render server handlers: %w", err)
+			}
+			formattedHandlers, err := format.Source([]byte(serverHandlersContent))
+			if err == nil {
+				files = append(files, core.GeneratedFile{Path: "server/handlers.go", Content: formattedHandlers})
+			}
+
+			serverRoutesContent, err := engine.Render("server/"+framework+"/routes.go.tmpl", serverData)
+			if err != nil {
+				return nil, fmt.Errorf("failed to render server routes: %w", err)
+			}
+			formattedRoutes, err := format.Source([]byte(serverRoutesContent))
+			if err == nil {
+				files = append(files, core.GeneratedFile{Path: "server/routes.go", Content: formattedRoutes})
+			}
 		}
 	}
 
@@ -352,7 +367,8 @@ func (g *Generator) SupportedFeatures() []core.Feature {
 }
 
 // convertEndpointsToClient converts core endpoints to client data
-func (g *Generator) convertEndpointsToClient(endpoints []core.Endpoint, securityDef []core.SecurityScheme, modulePath, baseDir string) ClientData {
+func (g *Generator) convertEndpointsToClient(endpoints []core.Endpoint, securityDef []core.SecurityScheme, modulePath, baseDir string, excludeTags []string) ClientData {
+	endpoints = filterEndpointsByTag(endpoints, excludeTags)
 
 	imports := codegen.NewImportManager(modulePath, baseDir, "client")
 	imports.Add("context")
@@ -399,8 +415,29 @@ func (g *Generator) convertEndpointsToClient(endpoints []core.Endpoint, security
 	}
 }
 
+// filterEndpointsByTag removes endpoints whose first tag is in the excluded set.
+// Endpoints with no tags are never excluded.
+func filterEndpointsByTag(endpoints []core.Endpoint, excludeTags []string) []core.Endpoint {
+	if len(excludeTags) == 0 {
+		return endpoints
+	}
+	excluded := make(map[string]bool, len(excludeTags))
+	for _, t := range excludeTags {
+		excluded[t] = true
+	}
+	var result []core.Endpoint
+	for _, ep := range endpoints {
+		if len(ep.Tags) > 0 && excluded[ep.Tags[0]] {
+			continue
+		}
+		result = append(result, ep)
+	}
+	return result
+}
+
 // convertEndpointsToServer converts core endpoints into server structures
-func (g *Generator) convertEndpointsToServer(endpoints []core.Endpoint, securityDef []core.SecurityScheme, modulePath, baseDir string) ServerData {
+func (g *Generator) convertEndpointsToServer(endpoints []core.Endpoint, securityDef []core.SecurityScheme, modulePath, baseDir string, excludeTags []string) ServerData {
+	endpoints = filterEndpointsByTag(endpoints, excludeTags)
 	imports := codegen.NewImportManager(modulePath, baseDir, "server")
 	imports.Add("context")
 	imports.Add("net/http")
@@ -651,11 +688,19 @@ func (g *Generator) toMethodName(operationID string) string {
 	return template.ToPascalCase(operationID)
 }
 
-func (g *Generator) convertModels(models []core.Model) []ModelData {
+func (g *Generator) convertModels(models []core.Model, excludeNames []string) []ModelData {
+	excludeSet := make(map[string]bool, len(excludeNames))
+	for _, name := range excludeNames {
+		excludeSet[name] = true
+	}
+
 	var result []ModelData
 	for _, m := range models {
 		// Top-level scalar enum schemas are emitted in the Enums section, not as structs.
 		if isTopLevelEnum(m) {
+			continue
+		}
+		if excludeSet[m.Name] {
 			continue
 		}
 		result = append(result, g.convertModel(m))
@@ -899,6 +944,16 @@ func (g *Generator) mapType(prop core.Property, modelName string) string {
 
 // mapType converts OpenAPI primitive types to Golang types.
 func (g *Generator) mapPrimitiveType(specType string, format string) string {
+	// Check user-defined overrides first (format takes precedence over type)
+	for _, ov := range g.typeOverrides {
+		if ov.Format != "" && ov.Format == format {
+			return ov.Go
+		}
+		if ov.Type != "" && ov.Type == specType && ov.Format == "" {
+			return ov.Go
+		}
+	}
+
 	switch specType {
 	case "string":
 		if format == "date-time" {

@@ -109,6 +109,16 @@ func (e *GoTemplateEngine) Render(templateName string, data interface{}) (string
 	return buff.String(), nil
 }
 
+// Override registers or replaces a single template by name with the given content.
+// Call this after Load() to replace individual built-in templates with custom ones.
+func (e *GoTemplateEngine) Override(name, content string) error {
+	if e.templates == nil {
+		return fmt.Errorf("engine not loaded: call Load() before Override()")
+	}
+	_, err := e.templates.New(name).Parse(content)
+	return err
+}
+
 // HasTemplate checks if a template exists
 func (e *GoTemplateEngine) HasTemplate(name string) bool {
 	if e.templates == nil {
