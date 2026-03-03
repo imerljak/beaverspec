@@ -2,6 +2,9 @@
 package {{ .PackageName }}
 
 import (
+{{- if .HealthCheck }}
+	"net/http"
+{{- end }}
 	"github.com/go-chi/chi/v5"
 )
 
@@ -14,3 +17,13 @@ func Register{{ .Name }}Routes(r chi.Router, handler {{ .Name }}Handler) {
 	{{- end }}
 }
 {{- end }}
+{{ if .HealthCheck }}
+// RegisterHealthRoutes registers the /health endpoint on the provided Chi router.
+func RegisterHealthRoutes(r chi.Router) {
+	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"ok"}`))
+	})
+}
+{{ end }}

@@ -2,6 +2,9 @@
 package {{ .PackageName }}
 
 import (
+{{- if .HealthCheck }}
+	"net/http"
+{{- end }}
 	"github.com/labstack/echo/v4"
 )
 
@@ -14,3 +17,11 @@ func Register{{ .Name }}Routes(e *echo.Echo, handler {{ .Name }}Handler) {
 	{{- end }}
 }
 {{- end }}
+{{ if .HealthCheck }}
+// RegisterHealthRoutes registers the /health endpoint on the provided Echo instance.
+func RegisterHealthRoutes(e *echo.Echo) {
+	e.GET("/health", func(c echo.Context) error {
+		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
+	})
+}
+{{ end }}

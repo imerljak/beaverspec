@@ -97,8 +97,10 @@ type ServerData struct {
 	PackageName     string
 	Imports         []codegen.Import
 	ModelsPackage   string // fully-qualified models package path (e.g. "github.com/example/project/models")
+	ModulePath      string // base module path (e.g. "github.com/example/project") — used in main.go imports
 	Handlers        []HandlerGroup
 	SecuritySchemes []SecuritySchemeData
+	HealthCheck     bool // whether to emit RegisterHealthRoutes (default: true)
 }
 
 // SecuritySchemeData is a template-friendly representation of a security scheme
@@ -307,7 +309,20 @@ func (g *Generator) Generate(spec *core.Spec, config *core.Config) (*core.Genera
 		}
 
 		if gen.Server {
-			serverData := g.convertEndpointsToServer(spec.Endpoints, spec.SecurityDef, modulePath, baseDir, config.Exclude.Tags)
+			healthCheck := true
+			if v, ok := config.Options["healthCheck"].(bool); ok {
+				healthCheck = v
+			}
+			genMiddleware := true
+			if v, ok := config.Options["middleware"].(bool); ok {
+				genMiddleware = v
+			}
+			genExampleMain := true
+			if v, ok := config.Options["exampleMain"].(bool); ok {
+				genExampleMain = v
+			}
+
+			serverData := g.convertEndpointsToServer(spec.Endpoints, spec.SecurityDef, modulePath, baseDir, config.Exclude.Tags, healthCheck)
 
 			serverInterfaceContent, err := engine.Render("server/interface.go.tmpl", serverData)
 			if err != nil {
@@ -345,6 +360,30 @@ func (g *Generator) Generate(spec *core.Spec, config *core.Config) (*core.Genera
 			formattedRoutes, err := format.Source([]byte(serverRoutesContent))
 			if err == nil {
 				files = append(files, core.GeneratedFile{Path: "server/routes.go", Content: formattedRoutes})
+			}
+
+			if genMiddleware {
+				middlewareContent, err := engine.Render("server/middleware.go.tmpl", serverData)
+				if err != nil {
+					return nil, fmt.Errorf("failed to render server middleware: %w", err)
+				}
+				formattedMiddleware, err := format.Source([]byte(middlewareContent))
+				if err != nil {
+					return nil, fmt.Errorf("failed to format server/middleware.go: %w\ncontent:\n%s", err, middlewareContent)
+				}
+				files = append(files, core.GeneratedFile{Path: "server/middleware.go", Content: formattedMiddleware})
+			}
+
+			if genExampleMain {
+				mainContent, err := engine.Render("server/"+framework+"/main.go.tmpl", serverData)
+				if err != nil {
+					return nil, fmt.Errorf("failed to render cmd/server/main.go: %w", err)
+				}
+				formattedMain, err := format.Source([]byte(mainContent))
+				if err != nil {
+					return nil, fmt.Errorf("failed to format cmd/server/main.go: %w\ncontent:\n%s", err, mainContent)
+				}
+				files = append(files, core.GeneratedFile{Path: "cmd/server/main.go", Content: formattedMain})
 			}
 		}
 	}
@@ -436,7 +475,7 @@ func filterEndpointsByTag(endpoints []core.Endpoint, excludeTags []string) []cor
 }
 
 // convertEndpointsToServer converts core endpoints into server structures
-func (g *Generator) convertEndpointsToServer(endpoints []core.Endpoint, securityDef []core.SecurityScheme, modulePath, baseDir string, excludeTags []string) ServerData {
+func (g *Generator) convertEndpointsToServer(endpoints []core.Endpoint, securityDef []core.SecurityScheme, modulePath, baseDir string, excludeTags []string, healthCheck bool) ServerData {
 	endpoints = filterEndpointsByTag(endpoints, excludeTags)
 	imports := codegen.NewImportManager(modulePath, baseDir, "server")
 	imports.Add("context")
@@ -491,8 +530,10 @@ func (g *Generator) convertEndpointsToServer(endpoints []core.Endpoint, security
 		PackageName:     "server",
 		Imports:         imports.GetImports(),
 		ModelsPackage:   modulePath + "/models",
+		ModulePath:      modulePath,
 		Handlers:        handlers,
 		SecuritySchemes: g.convertSecuritySchemes(securityDef),
+		HealthCheck:     healthCheck,
 	}
 }
 
